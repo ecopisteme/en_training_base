@@ -1,7 +1,8 @@
 name: Deploy Supabase Functions
 
 on:
-  push:
+ workflow_dispatch:
+ push:
     paths:
       - 'supabase/functions/**'
 
