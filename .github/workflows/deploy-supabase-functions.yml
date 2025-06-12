@@ -1,0 +1,19 @@
+name: Deploy Supabase Functions
+
+on:
+  push:
+    paths:
+      - 'supabase/functions/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Deploy Supabase Functions
+        uses: supabase/actions@v1
+        with:
+          args: deploy --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
