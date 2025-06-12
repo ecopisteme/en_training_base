@@ -1,8 +1,8 @@
 name: Deploy Supabase Functions
 
 on:
- workflow_dispatch:
- push:
+  workflow_dispatch:
+  push:
     paths:
       - 'supabase/functions/**'
 
@@ -10,9 +10,10 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-            - name: Deploy Supabase Functions
+      - name: Deploy Supabase Functions
         uses: supabase/cli-action@v2
         with:
           args: functions deploy --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
