@@ -12,9 +12,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Deploy Supabase Functions
-        uses: supabase/actions@v1
+            - name: Deploy Supabase Functions
+        uses: supabase/cli-action@v2
         with:
-          args: deploy --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
+          args: functions deploy --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
