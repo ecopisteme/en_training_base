@@ -238,16 +238,23 @@ client.on('messageCreate', async (message) => {
 
   // 5️⃣ 處理 review_history
   if (fnName === 'review_history') {
-    const { data: vocs } = await supabase
+  try {
+    // 先拿到資料，若 null 就給空陣列
+    const { data: vocData, error: ev } = await supabase
       .from('vocabulary')
       .select('word,source,page')
       .eq('user_id', profileId)
       .order('created_at');
-    const { data: reads } = await supabase
+    if (ev) console.error('[vocabulary 讀取失敗]', ev);
+    const vocs = vocData ?? [];
+
+    const { data: readData, error: er } = await supabase
       .from('reading_history')
       .select('source,note')
       .eq('user_id', profileId)
       .order('created_at');
+    if (er) console.error('[reading_history 讀取失敗]', er);
+    const reads = readData ?? [];
 
     let out = '';
     if (vocs.length) {
@@ -259,8 +266,13 @@ client.on('messageCreate', async (message) => {
         reads.map((r,i) => `${i+1}. ${r.source}：${r.note}`).join('\n');
     }
     if (!out) out = '目前尚無任何學習紀錄。';
+
     return message.reply(out);
+  } catch (err) {
+    console.error('[review_history 處理失敗]', err);
+    return message.reply('❌ 無法取得你的學習紀錄，請稍後再試。');
   }
+}
 
   // 6️⃣ 處理 record_actions
   if (fnName === 'record_actions') {
