@@ -1,0 +1,17 @@
+{
+  "type": "module",
+  "name": "my-discord-bot",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "scripts": {
+    "register": "node src/commands.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.50.0",
+    "discord.js": "^14.19.3",
+    "dotenv": "^16.5.0",
+    "openai": "^5.3.0",
+    "pgvector": "^0.2.1"
+  }
+}

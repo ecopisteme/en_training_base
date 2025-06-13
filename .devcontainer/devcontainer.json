@@ -1,0 +1,14 @@
+{
+  "name": "Discord-Supabase Bot",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:18",
+  "postCreateCommand": "npm install",
+  "forwardPorts": [], 
+  "remoteEnv": {
+    "DISCORD_TOKEN": "",
+    "SUPABASE_URL": "",
+    "SUPABASE_KEY": "",
+    "GUILD_ID": "",
+    "CLIENT_ID": "",
+    "PAID_ROLE_ID": ""
+  }
+}
