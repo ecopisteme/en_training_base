@@ -1,70 +1,58 @@
 // src/handlers/message.js
+import { createClient } from '@supabase/supabase-js';
+import { OpenAI } from 'openai';
+import prompts from '../prompts.js';
 
-import { PermissionFlagsBits } from 'discord.js';
+// Supabase & OpenAI clients
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+const openai   = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-/**
- * 處理收到的「訊息」事件。
- * @param {import('discord.js').Message} message
- * @param {import('discord.js').Client} client
- * @param {import('@supabase/supabase-js').SupabaseClient} supabase
- * @param {import('openai').OpenAI} openai
- * @param {Object} prompts
- * @param {string} prompts.SMART_CLASSIFIER
- * @param {string} prompts.VOCAB
- */
-export async function handleMessage(message, client, supabase, openai, prompts) {
+export default async function handleMessage(message, client) {
   // 0️⃣ 忽略自己
   if (message.author.bot) return;
 
-  // 1️⃣ 白名單（development / production）
+  // 1️⃣ 伺服器白名單
   const gid = message.guild.id;
-  const { NODE_ENV, TEST_GUILD_ID, PROD_GUILD_ID } = process.env;
-  if (NODE_ENV === 'development') {
-    if (gid !== TEST_GUILD_ID) return;
-  } else {
-    if (gid !== PROD_GUILD_ID) return;
-  }
+  if (
+    process.env.NODE_ENV === 'development'
+      ? gid !== process.env.TEST_GUILD_ID
+      : gid !== process.env.PROD_GUILD_ID
+  ) return;
 
   // 2️⃣ 拿 profileId
-  const { data: prof, error: pe } = await supabase
+  const { data: prof } = await supabase
     .from('profiles')
     .select('id')
     .eq('discord_id', message.author.id)
     .single();
-  if (pe || !prof) {
-    return message.reply('❌ 請先執行 /start 註冊');
-  }
-  const profileId = prof.id;
+  if (!prof) return message.reply('❌ 請先執行 /start');
+  const pid = prof.id;
 
-  // 3️⃣ 拿 user_channels
-  const { data: uc, error: ue } = await supabase
+  // 3️⃣ 拿私人頻道
+  const { data: uc } = await supabase
     .from('user_channels')
     .select('vocab_channel_id,reading_channel_id')
-    .eq('profile_id', profileId)
+    .eq('profile_id', pid)
     .single();
-  if (ue) {
-    console.error('[user_channels 讀取失敗]', ue);
-    return;
-  }
+  if (!uc) return;
 
-  // 4️⃣ 只能在專屬頻道回應
   if (![uc.vocab_channel_id, uc.reading_channel_id].includes(message.channel.id)) {
-    return;
+    return; // 只在私人詞彙／閱讀頻道回應
   }
 
-  // 5️⃣ 呼叫 GPT （Function Calling）
-  let resp;
+  // 4️⃣ 呼叫 GPT
+  let res;
   try {
-    resp = await openai.chat.completions.create({
+    res = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: prompts.SMART_CLASSIFIER },
-        { role: 'user',   content: message.content.trim() }
+        { role: 'user',   content: message.content }
       ],
       functions: [
         {
           name: 'record_actions',
-          description: '同時記錄詞彙與閱讀筆記',
+          description: '記錄詞彙與閱讀筆記',
           parameters: {
             type: 'object',
             properties: {
@@ -85,46 +73,45 @@ export async function handleMessage(message, client, supabase, openai, prompts) 
             },
             required: ['actions']
           }
-        },
-        {
-          name: 'review_history',
-          description: '列出使用者所有詞彙與閱讀筆記',
-          parameters: { type: 'object', properties: {}, required: [] }
         }
       ],
       function_call: 'auto',
       temperature: 0
     });
   } catch (e) {
-    console.error('[GPT 呼叫失敗]', e);
+    console.error('[handleMessage GPT]', e);
     return message.reply('❌ 系統忙碌中，請稍後再試');
   }
 
-  // 6️⃣ 解析 function_call
-  const msgResp = resp.choices[0].message;
-  const fnName  = msgResp.function_call?.name;
-  const fnArgs  = msgResp.function_call?.arguments
-    ? JSON.parse(msgResp.function_call.arguments)
-    : {};
+  // 5️⃣ 解析並寫入
+  const fc = res.choices[0].message.function_call;
+  const args = JSON.parse(fc.arguments);
+  const replies = [];
 
-  // 7️⃣ 處理「review_history」
-  if (fnName === 'review_history') {
-    // … 同你之前 index.js 裡的程式碼 …
-    // 讀 vocabulary、reading_history，組字串 reply
-    // return message.reply(out);
+  // (A) 詞彙
+  for (const a of args.actions.filter(x=>x.type==='vocab')) {
+    // 寫入 vocabulary
+    await supabase.from('vocabulary').insert([{
+      user_id: pid,
+      word:     a.term,
+      source:   a.source || null,
+      page:     a.page   || null
+    }]);
+    replies.push(`✅ 已記錄單字：${a.term}`);
   }
 
-  // 8️⃣ 處理「record_actions」
-  if (fnName === 'record_actions') {
-    // … 同你之前 index.js 裡的程式碼 …
-    // 1) 回 GPT 查 vocab 定義
-    // 2) supabase.insert(...) 到 vocabulary
-    // 3) supabase.insert(...) 到 reading_history
-    // 4) 回覆 message.reply(...)
+  // (B) 閱讀
+  for (const a of args.actions.filter(x=>x.type==='reading')) {
+    await supabase.from('reading_history').insert([{
+      user_id: pid,
+      source:  a.source || null,
+      note:    a.note   || null
+    }]);
+    replies.push(`✅ 已記錄閱讀筆記：${a.note}`);
   }
 
-  // 9️⃣ fallback：純文字回覆
-  if (msgResp.content) {
-    return message.reply(msgResp.content);
+  // 6️⃣ 回覆
+  if (replies.length) {
+    await message.reply(replies.join('\n'));
   }
 }
