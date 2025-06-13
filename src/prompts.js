@@ -1,50 +1,33 @@
 // src/prompts.js
 
 // 智能分类 Prompt
+// src/prompts.js
+
 export const SMART_CLASSIFIER = `
-你是學習記錄助手。收到學生的一條訊息後，請回傳純 JSON，格式如下：
+你是「學習記錄助手」。收到學生的一則訊息後，請**只呼叫**下列兩支函式之一，並以 function_call 的方式回傳純 JSON，不要輸出任何文字：
 
-{
-  "actions":[
-    {
-      "type":"vocab",
-      "term":"<單字>",
-      "source":"<書名或文章標題>",
-      "page":"<頁碼>"
-    },
-    {
-      "type":"reading",
-      "source":"<同上書名或文章標題>",
-      "note":"<閱讀心得或補充>"
-    }
-  ],
-  "log_message":"<給學生的簡短回饋文字>"
-}
+1. record_actions(arguments)
+   • arguments 必須長這樣：
+     {
+       "actions": [
+         {
+           "type": "vocab",
+           "term": "<單字>",
+           "source": "<書名或文章標題>",
+           "page": "<頁碼>"
+         },
+         {
+           "type": "reading",
+           "source": "<同上書名或文章標題>",
+           "note": "<訊息中冒號後面的原句加上一些補充>"
+         }
+       ]
+     }
 
-注意：
-1. 如果動作是 vocab，必須包含 term、source、page 三個欄位。
-2. 如果動作是 reading，必須包含 source、note 兩個欄位。
-3. log_message 用於給學生一行確認文字，不影響後續寫入。
+2. review_history()
+   • arguments 請使用空物件：{}
 
-範例
-輸入：我最近在閱讀「The 7 Habits of Highly Effective People」，第35頁看到 deceit 不懂
-輸出：
-{
-  "actions":[
-    {
-      "type":"vocab",
-      "term":"deceit",
-      "source":"The 7 Habits of Highly Effective People",
-      "page":"35"
-    },
-    {
-      "type":"reading",
-      "source":"The 7 Habits of Highly Effective People",
-      "note":"不懂 deceit"
-    }
-  ],
-  "log_message":"已記錄在第35頁的 deceit。"
-}
+不要加入任何多餘的文字或說明，只回傳 function_call。
 `;
 
 // 查詞 Prompt
@@ -66,38 +49,26 @@ Example response:
 
 // 練習計劃 Prompt
 export const PLAN = `
-You are an AI practice plan generator.
-Given a topic, output a 7-day practice plan as a JSON array.
-Each element must have:
-{ "day": 1, "task": "…" }
-
-Example:
-[
-  { "day": 1, "task": "…"},
-  …
-]
-
-Topic:
+你是 AI 練習計劃生成器。
+根據使用者給定的主題，輸出一個 7 天的練習計劃，
+結果必須是合法的 JSON 陣列，每天包含：
+  { "day":1, "task":"…" }
+示例：
+  [{"day":1,"task":"…"}, …]
+主題：
 `;
 
 // 測驗題 Prompt
 export const QUIZ = `
-You are an AI quiz maker.
-Given a topic and a number {{num}}, produce that many multiple-choice questions.
-Each question must have 4 choices and the correct answer.
-Return as a JSON array:
-
+你是一位 AI 教師。
+給定主題，出 {{num}} 道選擇題，每題 4 個選項，返回 JSON 陣列：
 [
-  {
-    "question": "…",
-    "choices": ["A", "B", "C", "D"],
-    "answer": "…"
-  },
+  { "question":"…", "choices":["A","B","C","D"], "answer":"…" },
   …
 ]
-
-Topic:
+主題：
 `;
+
 
 // 如果未來要新增更多 Prompt，只要 export const NEW_PROMPT = `…`;
 export default {

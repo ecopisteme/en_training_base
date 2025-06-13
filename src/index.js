@@ -1,5 +1,15 @@
 // src/index.js
 
+import http from 'http';
+
+const port = process.env.PORT || 3000;
+http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end('OK');
+}).listen(port, () => {
+  console.log(`Listening on port ${port}`);
+});
+
 // 1️⃣ Discord.js 合併 import：只宣告一次 Client，並加入 ChannelType
 import { Client, IntentsBitField, ChannelType } from 'discord.js';
 
@@ -34,14 +44,9 @@ client.once('ready', () => {
   console.log(`已登入 Discord：${client.user.tag}`);
 });
 
-// …下面接你原本的 interactionCreate 與 messageCreate 處理器，不需要再重複 import Client 或 ChannelType…
-
-
 // ——————————————————————————
 //  /start 指令：註冊、創建私密頻道，並寫入 user_channels
 // ——————————————————————————
-
-// … 其它 import 如 dotenv、supabase client 等 …
 
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isCommand() || interaction.commandName !== 'start') return;
@@ -152,194 +157,169 @@ client.on('interactionCreate', async (interaction) => {
 //  messageCreate：根據頻道路由到對應邏輯
 // ——————————————————————————
 client.on('messageCreate', async (message) => {
+  // 0️⃣ 忽略機器人自己
   if (message.author.bot) return;
-  const userDiscordId = message.author.id;
-  const text = message.content.trim();
 
-  // 快捷「複習」指令
-  if (/複[習習]/.test(text)) {
-    const { data: profile, error: pe } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("discord_id", userDiscordId)
-      .single();
-    if (pe || !profile) {
-      return message.reply("❌ 系統錯誤：請先使用 /start 註冊");
-    }
-    const profileId = profile.id;
-
-    const { data: vocs } = await supabase
-      .from("vocabulary")
-      .select("word,source,page")
-      .eq("user_id", profileId)
-      .order("created_at");
-    const { data: reads } = await supabase
-      .from("reading_history")
-      .select("source,note")
-      .eq("user_id", profileId)
-      .order("created_at");
-
-    let out = "";
-    if (vocs.length) {
-      out += "📚 **詞彙列表**\n" +
-        vocs.map((v,i) => `${i+1}. ${v.word} (${v.source}${v.page? ` 第${v.page}頁` : ""})`).join("\n");
-    }
-    if (reads.length) {
-      out += (out? "\n\n" : "") + "✍️ **閱讀筆記**\n" +
-        reads.map((r,i) => `${i+1}. ${r.source}：${r.note}`).join("\n");
-    }
-    if (!vocs.length && !reads.length) {
-      out = "目前尚無任何學習紀錄。";
-    }
-    return message.reply(out);
+  // —— 伺服器白名單 —— 
+  const gid = message.guild.id;
+  if (process.env.NODE_ENV === 'development') {
+    if (gid !== process.env.TEST_GUILD_ID) return;
+  } else {
+    if (gid !== process.env.PROD_GUILD_ID) return;
   }
 
-  // 呼叫 GPT，啟用 Function Calling
+  // 1️⃣ 取得使用者與文字
+  const userDiscordId = message.author.id;
+  const text          = message.content.trim();
+
+  // 2️⃣ 查 Supabase 拿 profileId
+  const { data: prof, error: pe } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('discord_id', userDiscordId)
+    .single();
+  if (pe || !prof) return message.reply('❌ 請先執行 /start 註冊');
+  const profileId = prof.id;
+
+  // 3️⃣ 呼叫 GPT（Function Calling）
   let resp;
   try {
     resp = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: 'gpt-4o-mini',
       messages: [
-        {
-          role: "system",
-          content: `你是學習記錄助手。
-只要偵測到「讀」「書」「第…頁」等閱讀提示，且抓到英文單字，就：
-1. 產出 type="vocab"，填 term、source、page。
-2. 產出 type="reading"，note 一定填「冒號後的完整句子」。
-若僅抓到單字，則只產出 vocab。
-若使用者說「複習」則呼叫 review_history()。
-回傳時僅輸出 function_call，勿其他文字。`
-        },
-        { role: "user", content: text }
+        { role: 'system', content: prompts.SMART_CLASSIFIER },
+        { role: 'user',   content: text }
       ],
-      functions,
-      function_call: "auto",
+      functions: [
+        {
+          name: 'record_actions',
+          description: '同時記錄詞彙與閱讀筆記',
+          parameters: {
+            type: 'object',
+            properties: {
+              actions: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    type:   { type: 'string', enum: ['vocab','reading'] },
+                    term:   { type: 'string' },
+                    source: { type: 'string' },
+                    page:   { type: 'string' },
+                    note:   { type: 'string' }
+                  },
+                  required: ['type']
+                }
+              }
+            },
+            required: ['actions']
+          }
+        },
+        {
+          name: 'review_history',
+          description: '列出使用者所有詞彙與閱讀筆記',
+          parameters: { type: 'object', properties: {}, required: [] }
+        }
+      ],
+      function_call: 'auto',
       temperature: 0
     });
-  } catch (err) {
-    console.error("[呼叫 GPT 失敗]", err);
-    return;
+  } catch (e) {
+    console.error('[GPT 呼叫失敗]', e);
+    return message.reply('❌ 系統忙碌中，請稍後再試');
   }
 
-  const msg = resp.choices[0].message;
-  const callName = msg.function_call?.name || msg.tool_calls?.[0]?.name;
-  const callArgs = msg.function_call?.arguments || msg.tool_calls?.[0]?.arguments;
+  // 4️⃣ 解析 function_call
+  const msgResp = resp.choices[0].message;
+  const fnName  = msgResp.function_call?.name;
+  const fnArgs  = msgResp.function_call?.arguments
+    ? JSON.parse(msgResp.function_call.arguments)
+    : {};
 
-  // 取得 profileId
-  const { data: profile2, error: pe2 } = await supabase
-    .from("profiles")
-    .select("id")
-    .eq("discord_id", userDiscordId)
-    .single();
-  if (pe2 || !profile2) {
-    console.error("[取得 UUID 失敗]", pe2);
-    return message.reply("❌ 系統錯誤：請先使用 /start 註冊");
-  }
-  const profileId = profile2.id;
-
-  // 處理 record_actions
-  if (callName === "record_actions") {
-    const acts = JSON.parse(callArgs || "{}").actions || [];
-    console.log("👉 record_actions 收到的 acts：", acts);
-
-    const replies = [];
-
-    // 處理 vocab
-    for (const a of acts.filter(i => i.type === "vocab")) {
-      const term = a.term;
-      const src  = a.source || "unknown";
-      const pg   = a.page   || "unknown";
-
-      let fullDef = "";
-      try {
-        const vRes = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: [
-            { role: "system", content: prompts.VOCAB },
-            { role: "user",   content: `Word: ${term}\nContext: ${src}, page ${pg}` }
-          ],
-          temperature: 0.7
-        });
-        fullDef = vRes.choices[0].message.content.trim();
-      } catch (e) {
-        console.error("[取得詞彙解釋失敗]", e);
-        fullDef = "(無法取得詞彙解釋)";
-      }
-
-      const { error: ev } = await supabase.from("vocabulary").insert([{
-        user_id:  profileId,
-        word:     term,
-        source:   src,
-        page:     pg,
-        response: fullDef
-      }]);
-      if (ev) console.error("[vocabulary 寫入失敗]", ev);
-
-      replies.push(
-        `**📖 ${term}** 的連結式解釋：\n${fullDef}\n` +
-        `> 已記錄詞彙：${term} (${src}${pg!=="unknown"? ` 第${pg}頁` : ""})`
-      );
-    }
-
-    // 處理 reading
-    for (const a of acts.filter(i => i.type === "reading")) {
-      const note = text.includes('：')
-        ? text.split('：').slice(1).join('：').trim()
-        : a.note || "(unknown_note)";
-      const src  = a.source || "unknown";
-
-      const { error: er } = await supabase.from("reading_history").insert([{
-        user_id: profileId,
-        source:  src,
-        note:    note
-      }]);
-      if (er) {
-        console.error("[reading_history 寫入失敗]", er);
-        replies.push(`❌ 寫入閱讀筆記失敗：${er.message}`);
-      } else {
-        replies.push(
-          `✍️ **閱讀筆記**：\n${note}\n` +
-          `> 已記錄閱讀筆記：${src}`
-        );
-      }
-    }
-
-    await message.reply(replies.join("\n\n"));
-    return;
-  }
-
-  // 處理 review_history
-  if (callName === "review_history") {
+  // 5️⃣ 處理 review_history
+  if (fnName === 'review_history') {
     const { data: vocs } = await supabase
-      .from("vocabulary")
-      .select("word,source,page")
-      .eq("user_id", profileId)
-      .order("created_at");
+      .from('vocabulary')
+      .select('word,source,page')
+      .eq('user_id', profileId)
+      .order('created_at');
     const { data: reads } = await supabase
-      .from("reading_history")
-      .select("source,note")
-      .eq("user_id", profileId)
-      .order("created_at");
+      .from('reading_history')
+      .select('source,note')
+      .eq('user_id', profileId)
+      .order('created_at');
 
-    let out = "";
+    let out = '';
     if (vocs.length) {
-      out += "📚 **詞彙列表**\n" +
-        vocs.map((v,i) => `${i+1}. ${v.word} (${v.source}${v.page? ` 第${v.page}頁` : ""})`).join("\n");
+      out += '📚 **詞彙列表**\n' +
+        vocs.map((v,i) => `${i+1}. ${v.word} (${v.source}${v.page? ` 第${v.page}頁` : ''})`).join('\n');
     }
     if (reads.length) {
-      out += (out? "\n\n" : "") + "✍️ **閱讀筆記**\n" +
-        reads.map((r,i) => `${i+1}. ${r.source}：${r.note}`).join("\n");
+      out += (out? '\n\n' : '') + '✍️ **閱讀筆記**\n' +
+        reads.map((r,i) => `${i+1}. ${r.source}：${r.note}`).join('\n');
     }
-    if (!vocs.length && !reads.length) {
-      out = "目前尚無任何學習紀錄。";
-    }
+    if (!out) out = '目前尚無任何學習紀錄。';
     return message.reply(out);
   }
 
-  // fallback：純文字回覆
-  if (msg.content) {
-    return message.reply(msg.content);
+  // 6️⃣ 處理 record_actions
+  if (fnName === 'record_actions') {
+    const actions = fnArgs.actions || [];
+    const replies = [];
+
+    // 6.1 處理 vocab
+    for (const a of actions.filter(x => x.type === 'vocab' && x.term)) {
+      let definition = '';
+      try {
+        const vr = await openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: prompts.VOCAB },
+            { role: 'user',   content: `Word: ${a.term}\nContext: ${a.source||'unknown'} page ${a.page||'unknown'}` }
+          ],
+          temperature: 0.7
+        });
+        definition = vr.choices[0].message.content.trim();
+      } catch {
+        definition = '(無法取得解釋)';
+      }
+      await supabase.from('vocabulary').insert([{
+        user_id:  profileId,
+        word:     a.term,
+        source:   a.source || null,
+        page:     a.page   || null,
+        response: definition
+      }]);
+      replies.push(`**📖 ${a.term}**：\n${definition}`);
+    }
+
+    // 6.2 處理 reading
+    for (const a of actions.filter(x => x.type === 'reading')) {
+      const note = a.note
+        || (text.includes('：')
+          ? text.split('：').slice(1).join('：').trim()
+          : '(無標註心得)');
+      await supabase.from('reading_history').insert([{
+        user_id: profileId,
+        source:  a.source || null,
+        note
+      }]);
+      replies.push(`✍️ **閱讀筆記**：\n${note}`);
+    }
+
+    // 6.3 統一回覆
+    if (replies.length) {
+      return message.reply(replies.join('\n\n'));
+    }
+  }
+
+  // 7️⃣ fallback：純文字回覆
+  if (msgResp.content) {
+    return message.reply(msgResp.content);
   }
 });
+
+
+
 
 client.login(process.env.DISCORD_TOKEN);
