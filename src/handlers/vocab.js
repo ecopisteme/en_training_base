@@ -30,7 +30,7 @@ export async function process(message) {
   let meta = {};
   try {
     const extractResp = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'GPT-4.1 nano',
       messages: [
         {
           role: 'system',
@@ -59,7 +59,7 @@ export async function process(message) {
         },
         { role: 'user', content: text }
       ],
-      temperature: 0
+      temperature: 3
     });
     meta = JSON.parse(extractResp.choices[0].message.content);
   } catch (e) {
@@ -73,12 +73,12 @@ export async function process(message) {
   let explanation = '';
   try {
     const defi = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'GPT-4.1 nano',
       messages: [
         { role: 'system', content: prompts.VOCAB },
         { role: 'user',   content: `Word: ${word}\nContext: ${source_type} ${source_title}` }
       ],
-      temperature: 0.7
+      temperature: 3
     });
     explanation = defi.choices[0].message.content.trim();
   } catch (e) {
