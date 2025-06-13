@@ -1,31 +1,54 @@
 // src/index.js
 
-import 'dotenv/config';
+// 讓 Render 正常啟動（若不需要 HTTP 回應，可改成 background worker）
 import http from 'http';
+const port = process.env.PORT || 3000;
+http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end('OK');
+}).listen(port, () => {
+  console.log(`Listening on port ${port}`);
+});
+
+// Discord.js + handler imports
 import { Client, IntentsBitField } from 'discord.js';
-import { handleStart, handleReview } from './handlers/interaction.js';
+import { handleStart, handleReview, handleAddNote } from './handlers/interaction.js';
 import handleMessage from './handlers/message.js';
 
-const port = process.env.PORT || 3000;
-http.createServer((req,res)=>{res.writeHead(200);res.end('OK');})
-  .listen(port, ()=>console.log(`Listening on ${port}`));
+import dotenv from 'dotenv';
+dotenv.config();
 
 const client = new Client({
   intents: [
     IntentsBitField.Flags.Guilds,
     IntentsBitField.Flags.GuildMessages,
-    IntentsBitField.Flags.MessageContent
+    IntentsBitField.Flags.MessageContent,
   ]
 });
 
-client.once('ready', () => console.log(`Bot 已上線：${client.user.tag}`));
-
-client.on('interactionCreate', async inter => {
-  if (!inter.isCommand()) return;
-  if (inter.commandName === 'start')  return handleStart(inter, client);
-  if (inter.commandName === 'review') return handleReview(inter);
+client.once('ready', () => {
+  console.log(`Bot 已上線：${client.user.tag}`);
 });
 
-client.on('messageCreate', message => handleMessage(message, client));
+// Slash commands 回覆
+client.on('interactionCreate', async inter => {
+  if (!inter.isCommand()) return;
+
+  switch (inter.commandName) {
+    case 'start':
+      return handleStart(inter, client);
+    case 'review':
+      return handleReview(inter);
+    case 'addnote':
+      return handleAddNote(inter);
+    default:
+      return;
+  }
+});
+
+// 文字訊息事件
+client.on('messageCreate', message => {
+  handleMessage(message, client);
+});
 
 client.login(process.env.DISCORD_TOKEN);
