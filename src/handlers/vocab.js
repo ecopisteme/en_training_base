@@ -1,15 +1,12 @@
 // src/handlers/vocab.js
-import { ChannelType, PermissionFlagsBits } from 'discord.js';
-import { createClient } from '@supabase/supabase-js';
-import { OpenAI } from 'openai';
-import prompts from '../prompts.js';
 import dotenv from 'dotenv';
 dotenv.config();
+import { ChannelType, PermissionFlagsBits } from 'discord.js';
 
-// Supabase client
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
-// OpenAI client
-const openai   = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+import { supabase, openai } from "../lib/clients.js";
+
+import prompts from '../prompts.js';
+
 
 /**
  * 處理「詞彙累積」專屬頻道訊息

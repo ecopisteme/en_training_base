@@ -1,71 +1,161 @@
-// src/index.js（或你主程式的檔案）
-import { Client, IntentsBitField } from 'discord.js';
-import dotenv from 'dotenv';
-
-// 把所有 handler 都 import 進來
-import prompts       from '../prompts.js';
+// src/handlers/interaction.js
+import { ChannelType, PermissionFlagsBits } from "discord.js";
+import { supabase, openai } from "../lib/clients.js";
+import prompts          from '../prompts.js';
 
 
-dotenv.config();
+/**
+ * /start：建立或取回私密頻道
+ */
 
-const client = new Client({
-  intents: [
-    IntentsBitField.Flags.Guilds,
-    IntentsBitField.Flags.GuildMessages,
-    IntentsBitField.Flags.MessageContent,
-  ]
-});
-
-client.once('ready', () => {
-  console.log(`Bot 已上線：${client.user.tag}`);
-});
-
-// —— 1️⃣ 處理 Slash Commands —— 
-client.on('interactionCreate', async interaction => {
-  if (!interaction.isCommand()) return;
-
-  switch (interaction.commandName) {
-    case 'start':
-      // /start 要建立頻道、upsert profiles、存 user_channels
-      return handleStart(interaction, client);
-
-    case 'review':
-      // /review 要讀取所有 vocabulary + reading_history
-      return handleReview(interaction, client);
-
-    case 'addnote':
-      // /addnote source & note
-      return handleAddNote(interaction, client);
-
-    // 如果以後要新增 /addvocab、/plan、/quiz...，都可以在這裡接
-    default:
-      return;
-  }
-});
-
-// —— 2️⃣ 處理文字訊息（私人頻道路由）—— 
-client.on('messageCreate', async message => {
-  // 全部都交給你的 message handler
-  await handleMessage(message, client);
-});
-
-client.login(process.env.DISCORD_TOKEN);
-
-/** 處理 /start 指令 */
 export async function handleStart(interaction, client) {
-  await interaction.deferReply({ ephemeral: true });
+  const guild    = interaction.guild;
+  const userId   = interaction.user.id;
+  const username = interaction.user.username;
+  const catName  = '私人訓練頻道';
+
   try {
-    // …你現有的 upsert profiles + 建頻道邏輯…
-    return interaction.followUp({
-      content: "✅ /start 完成！",
-      ephemeral: true
+    // ── 0️⃣ Upsert 使用者資料 ─────────────────────────
+    const { data: prof, error: pErr } = await supabase
+      .from('profiles')
+      .upsert(
+        { discord_id: userId, username },
+        { onConflict: 'discord_id', returning: 'minimal' }
+      )
+      .select('id')
+      .single();
+    if (pErr || !prof) throw new Error('無法存取或建立使用者資料');
+    const profileId = prof.id;
+
+    // ── 1️⃣ 查有無既存頻道 ─────────────────────────────
+    const { data: uc } = await supabase
+      .from('user_channels')
+      .select('vocab_channel_id,reading_channel_id')
+      .eq('profile_id', profileId)
+      .single();
+
+    if (uc?.vocab_channel_id && uc?.reading_channel_id) {
+      // 確認 Discord 上頻道仍存在
+      const [vOK, rOK] = await Promise.all([
+        guild.channels.fetch(uc.vocab_channel_id).then(() => true).catch(() => false),
+        guild.channels.fetch(uc.reading_channel_id).then(() => true).catch(() => false),
+      ]);
+      if (vOK && rOK) {
+        // 直接回覆
+        return interaction.reply({
+          content:
+            `✅ 你已經有私人訓練頻道：\n` +
+            `• 詞彙累積 → <#${uc.vocab_channel_id}>\n` +
+            `• 閱讀筆記 → <#${uc.reading_channel_id}>`,
+          ephemeral: true,
+        });
+      }
+    }
+
+    // ── 2️⃣ 需要新建頻道 ────────────────────────────────
+    // 2.1 建分類（若無）
+    let category = guild.channels.cache.find(c =>
+      c.type === ChannelType.GuildCategory && c.name === catName
+    );
+    if (!category) {
+      category = await guild.channels.create({ name: catName, type: ChannelType.GuildCategory });
+    }
+
+    // 2.2 權限設定
+    const overwrites = [
+      { id: guild.roles.everyone, deny: [PermissionFlagsBits.ViewChannel] },
+      { id: userId,               allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+      { id: client.user.id,       allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
+    ];
+
+    // 2.3 建兩個私密頻道
+    const vocabChan = await guild.channels.create({
+      name:   `🔖 詞彙累積-${username}`,
+      type:   ChannelType.GuildText,
+      parent: category.id,
+      permissionOverwrites: overwrites,
     });
+    const readingChan = await guild.channels.create({
+      name:   `📖 閱讀筆記-${username}`,
+      type:   ChannelType.GuildText,
+      parent: category.id,
+      permissionOverwrites: overwrites,
+    });
+
+    // ── 3️⃣ 寫回資料庫 ────────────────────────────────
+    await supabase.from('user_channels').upsert(
+      {
+        profile_id:         profileId,
+        vocab_channel_id:   vocabChan.id,
+        reading_channel_id: readingChan.id,
+      },
+      { onConflict: 'profile_id' }
+    );
+
+    // ── 4️⃣ 最後一次性 reply ────────────────────────────
+    return interaction.reply({
+      content:
+        `✅ 已建立私人訓練頻道：\n` +
+        `• 詞彙累積 → <#${vocabChan.id}>\n` +
+        `• 閱讀筆記 → <#${readingChan.id}>`,
+      ephemeral: true,
+    });
+
+  } catch (err) {
+    console.error('[handleStart 錯誤]', err);
+    return interaction.reply({
+      content: `❌ /start 失敗：${err.message}`,
+      ephemeral: true,
+    });
+  }
+}
+
+/**
+ * /review：複習詞彙 & 閱讀筆記
+ */
+export async function handleReview(interaction) {
+  await interaction.deferReply({ flags: 64 });
+
+  try {
+    // 1️⃣ 取得 profileId
+    const { data: prof } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("discord_id", interaction.user.id)
+      .single();
+    if (!prof) throw new Error("找不到你的 profile");
+    const pid = prof.id;
+
+    // 2️⃣ 抓 vocabulary
+    const { data: vv } = await supabase
+      .from("vocabulary")
+      .select("word,source,page")
+      .eq("user_id", pid)
+      .order("created_at");
+
+    // 3️⃣ 抓 reading_history
+    const { data: rr } = await supabase
+      .from("reading_history")
+      .select("source,note")
+      .eq("user_id", pid)
+      .order("created_at");
+
+    let out = "";
+    if (vv?.length) {
+      out += "📚 **詞彙列表**\n" +
+        vv.map((v, i) => `${i+1}. ${v.word} (${v.source}${v.page? ` 第${v.page}頁` : ""})`).join("\n");
+    }
+    if (rr?.length) {
+      out += (out? "\n\n" : "") + "✍️ **閱讀筆記**\n" +
+        rr.map((r, i) => `${i+1}. ${r.source}：${r.note}`).join("\n");
+    }
+    if (!out) out = "目前尚無任何學習紀錄。";
+
+    await interaction.editReply({ content: out });
+
   } catch (e) {
-    console.error("[handleStart]", e);
-    return interaction.followUp({
-      content: `❌ /start 失敗：${e.message}`,
-      ephemeral: true
-    });
+    console.error("[handleReview] 錯誤", e);
+    await interaction.editReply({ content: "❌ 讀取失敗，請稍後再試。" });
   }
 }
 
@@ -106,11 +196,3 @@ export async function handleAddNote(interaction, client) {
   }
 }
 
-/**
- * /review 指令
- */
-export async function handleReview(interaction, client) {
-  await interaction.deferReply({ ephemeral: true });
-  // …你原本的 review_history 邏輯全搬過來…
-  return interaction.followUp('📝 這裡是你的複習列表');
-}

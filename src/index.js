@@ -1,22 +1,40 @@
 // src/index.js
+import dotenv from "dotenv";
+dotenv.config();
 
-// 讓 Render 正常啟動（若不需要 HTTP 回應，可改成 background worker）
+// ———————— Health Check 服务器 ————————
+// 只有在部署环境 (Render 等) 有 PORT 时才启动；本地开发跳过，避免端口冲突
+
+// 1. 在文件顶部引入 http
 import http from 'http';
-const port = process.env.PORT || 3000;
-http.createServer((req, res) => {
-  res.writeHead(200);
-  res.end('OK');
-}).listen(port, () => {
-  console.log(`Listening on port ${port}`);
-});
+
+// 2. 只有在部署环境（有 PORT）时才启动 Health Check
+if (process.env.PORT) {
+  const port = Number(process.env.PORT);
+
+  const server = http.createServer((req, res) => {
+    res.writeHead(200);
+    res.end('OK');
+  });
+
+  server.listen(port);
+  server.on('listening', () => {
+    console.log(`🩺 Health server listening on port ${port}`);
+  });
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`⚠️  Port ${port} in use, skipping health server`);
+    } else {
+      throw err;
+    }
+  });
+}
 
 // Discord.js + handler imports
 import { Client, IntentsBitField } from 'discord.js';
 import { handleStart, handleReview, handleAddNote } from './handlers/interaction.js';
 import handleMessage from './handlers/message.js';
 
-import dotenv from 'dotenv';
-dotenv.config();
 
 const client = new Client({
   intents: [

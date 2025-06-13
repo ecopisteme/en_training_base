@@ -1,12 +1,9 @@
 // src/handlers/message.js
-import { ChannelType, PermissionFlagsBits } from 'discord.js';
-import { createClient } from '@supabase/supabase-js';
-import { OpenAI } from 'openai';
 import prompts from '../prompts.js';
+import { supabase, openai } from "../lib/clients.js";
+import { ChannelType, PermissionFlagsBits } from 'discord.js';
 
-// Supabase & OpenAI clients
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
-const openai   = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
 
 export default async function handleMessage(message, client) {
   // 0️⃣ 忽略自己
