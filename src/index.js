@@ -26,6 +26,8 @@ import { createClient } from '@supabase/supabase-js';
 import { OpenAI } from 'openai';
 import prompts from './prompts.js';
 import { channelRoutes } from './handlers/index.js';
+import { handleMessage } from './handlers/index.js';
+
 
 dotenv.config();
 
@@ -313,6 +315,19 @@ client.on('messageCreate', async (message) => {
       : gid !== process.env.PROD_GUILD_ID
   ) {
     return;
+  }
+
+  //一次呼叫到 handler 裡去做所有事
+  try {
+    await handleMessage(
+      message,
+      client,
+      supabase,   // 你上面已經 createClient()
+      openai,     // 你上面已經 new OpenAI()
+      prompts     // 你上面已經 import prompts
+    );
+  } catch (err) {
+    console.error('[handleMessage 失敗]', err);
   }
 
   // 拿 profileId

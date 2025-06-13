@@ -73,7 +73,7 @@ export async function process(message) {
   let explanation = '';
   try {
     const defi = await openai.chat.completions.create({
-      model: 'GPT-4.1 nano',
+      model: 'GPT-4.1 mini',
       messages: [
         { role: 'system', content: prompts.VOCAB },
         { role: 'user',   content: `Word: ${word}\nContext: ${source_type} ${source_title}` }
