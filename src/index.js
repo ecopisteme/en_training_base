@@ -63,26 +63,6 @@ client.once('ready', async () => {
   }
 });
 
-client.on('interactionCreate', async inter => {
-  if (!inter.isCommand()) return;
-  if (inter.commandName === 'start') {
-    await handleStart(inter, client);
-    // start 完成後，再把剛創建好的頻道更新到 Map  
-    const profileId = await handleStart(inter, client);
-// 再根據 profileId 從 user_channels 抓頻道 ID，塞給 channelMap
-
-    const userId = inter.user.id;
-    const uc     = await supabase
-      .from('user_channels')
-      .select('vocab_channel_id, reading_channel_id')
-      .eq('profile_id', /* 先前 handleStart 得到的 profileId */)
-      .single();
-    channelMap.set(userId, {
-      vocab:   uc.data.vocab_channel_id,
-      reading: uc.data.reading_channel_id
-    });
-  }
-});
 //messageCreate
 client.on('messageCreate', message => handleMessage(message, client, channelMap));
 
