@@ -1,54 +1,50 @@
-// src/handlers/message.js
-import prompts from '../prompts.js';
-import { supabase, openai } from '../lib/clients.js';
+/* ========= 既有 import、client 建立保持原樣 ========= */
+// ︙你原本的 import / client 相關程式碼
 
-export default async function handleMessage(message) {
-  if (message.author.bot) return;
+/* ========= 新增：handler 匯入 ========= */
+/* 若路徑不同，請自行調整 */
+import {
+  handleStart,
+  handleReview,
+  handleAddNote,
+} from './handlers/interaction.js';
 
-  // 只在私頻裡
-  const { data: prof } = await supabase
-    .from('profiles').select('id').eq('discord_id', message.author.id).single();
-  if (!prof) return;
-  const pid = prof.id;
+/* ========= 指令名稱 ➜ Handler Map ========= */
+const handlers = new Map([
+  ['start',   handleStart],
+  ['review',  handleReview],
+  ['addnote', handleAddNote],
+]);
 
-  const { data: uc } = await supabase
-    .from('user_channels')
-    .select('vocab_channel_id,reading_channel_id')
-    .eq('profile_id', pid)
-    .single();
-  if (!uc) return;
+/* ========= 唯一的 interactionCreate 監聽器 ========= */
+client.on('interactionCreate', async (interaction) => {
+  /* 只處理 Slash 指令（ChatInputCommand） */
+  if (!interaction.isChatInputCommand()) return;
 
-  const cid = message.channel.id;
-  if (cid !== uc.vocab_channel_id && cid !== uc.reading_channel_id) return;
+  try {
+    /* ❶ 3 秒內一次性 defer（私密訊息） */
+    await interaction.deferReply({ ephemeral: true });
 
-  // 只示範 vocab 模式，reading 模式請自行照 function-calling 加入
-  if (cid === uc.vocab_channel_id) {
-    const term = message.content.trim();
-    // 呼叫 GPT 拿解釋
-    let def;
-    try {
-      const vr = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages:[
-          { role:'system', content: prompts.VOCAB },
-          { role:'user', content:`Word: ${term}` }
-        ]
-      });
-      def = vr.choices[0].message.content;
-    } catch {
-      def = '(無法取得解釋)';
+    /* ❷ 依指令名稱路由 */
+    const fn = handlers.get(interaction.commandName);
+    if (!fn) {
+      await interaction.editReply('⚠️ 指令未實作');
+      return;
     }
-    //寫入 vocabulary，包含 response
-    await supabase.from('vocabulary').insert([{
-      user_id: pid,
-      word:     term,
-      source:   message.channel.name,  // 或者其他你要的來源標記
-      page:     null,
-      response: definition
-    }]);
-    // 回覆
-    return message.reply(`**${term}**：\n${def}`);
-  }
 
-  // cid === reading_channel_id 的話就走你的 SMART_CLASSIFIER + record_actions… 
-}
+    /* ❸ 執行真正邏輯（可量測耗時） */
+    console.time(`${interaction.commandName}-handler`);
+    await fn(interaction, client);
+    console.timeEnd(`${interaction.commandName}-handler`);
+
+  } catch (err) {
+    console.error('[InteractionCreate 錯誤]', err);
+    /* 已 defer，安全 editReply 做保底訊息 */
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply('❌ 執行失敗，請稍後再試。');
+    }
+  }
+});
+
+/* ========= 其餘程式（登入、其他事件…）保持原樣 ========= */
+// ︙你原本的 client.login(...)、ready 事件等
