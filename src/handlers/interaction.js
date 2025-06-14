@@ -2,6 +2,11 @@
 import { ChannelType, PermissionFlagsBits } from 'discord.js';
 import { supabase } from '../lib/clients.js';
 
+// src/handlers/interaction.js
+
+import { ChannelType, PermissionFlagsBits } from "discord.js";
+import { supabase } from "../lib/clients.js";
+
 /**
  * /start：建立或取回私密頻道
  */
@@ -9,112 +14,107 @@ export async function handleStart(interaction, client) {
   const guild    = interaction.guild;
   const userId   = interaction.user.id;
   const username = interaction.user.username;
-  const catName  = "私人訓練頻道";
-
-  // 1️⃣ 先 deferReply，讓 Discord interaction 進入已回應狀態
-  await interaction.deferReply({ flags: 64 });
+  const catName  = '私人訓練頻道';
 
   try {
-    // 2️⃣ Upsert 使用者到 profiles，拿到 profileId
+    // 0️⃣ Upsert 使用者到 profiles，拿到 profileId
     const { data: prof, error: pErr } = await supabase
-      .from("profiles")
+      .from('profiles')
       .upsert(
         { discord_id: userId, username },
-        { onConflict: "discord_id", returning: "minimal" }
+        { onConflict: 'discord_id', returning: 'minimal' }
       )
-      .select("id")
+      .select('id')
       .single();
-    if (pErr || !prof) throw new Error("無法存取或建立使用者資料");
+    if (pErr || !prof) throw new Error('無法存取或建立使用者資料');
     const profileId = prof.id;
 
-    // 3️⃣ 查 Supabase 看是否已有頻道
+    // 1️⃣ 看 Supabase 裡 user_channels 是否已經有記錄
     const { data: uc } = await supabase
-      .from("user_channels")
-      .select("vocab_channel_id,reading_channel_id")
-      .eq("profile_id", profileId)
+      .from('user_channels')
+      .select('vocab_channel_id,reading_channel_id')
+      .eq('profile_id', profileId)
       .single();
 
     if (uc?.vocab_channel_id && uc?.reading_channel_id) {
-      // 4️⃣ 確認 Discord 上頻道都還在
+      // 確認 Discord 上兩個頻道都還在
       const [vOK, rOK] = await Promise.all([
         guild.channels.fetch(uc.vocab_channel_id).then(() => true).catch(() => false),
         guild.channels.fetch(uc.reading_channel_id).then(() => true).catch(() => false),
       ]);
       if (vOK && rOK) {
-        // 5️⃣ 已存在，就 editReply 告知並結束
-        return interaction.editReply({
+        // 直接一次性回覆
+        return interaction.reply({
           content:
             `✅ 你已經有私人訓練頻道：\n` +
             `• 詞彙累積 → <#${uc.vocab_channel_id}>\n` +
             `• 閱讀筆記 → <#${uc.reading_channel_id}>`,
+          ephemeral: true
         });
       }
-      // 若任一不存在，就繼續下面的「重建流程」
+      // 任一頻道不存在，繼續走「重建流程」
     }
 
-    // 6️⃣ 建分類（若無）
+    // 2️⃣ 分類（若無就建立）
     let category = guild.channels.cache.find(c =>
       c.type === ChannelType.GuildCategory && c.name === catName
     );
     if (!category) {
       category = await guild.channels.create({
         name: catName,
-        type: ChannelType.GuildCategory,
+        type: ChannelType.GuildCategory
       });
     }
 
-    // 7️⃣ 權限覆蓋
+    // 3️⃣ 權限覆蓋
     const overwrites = [
       { id: guild.roles.everyone, deny: [PermissionFlagsBits.ViewChannel] },
-      {
-        id: userId,
-        allow: [
-          PermissionFlagsBits.ViewChannel,
-          PermissionFlagsBits.SendMessages,
-          PermissionFlagsBits.ReadMessageHistory,
-        ],
-      },
-      { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
+      { id: userId,               allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+      { id: client.user.id,       allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
     ];
 
-    // 8️⃣ 建兩個私密頻道
+    // 4️⃣ 建私密頻道
     const vocabChan = await guild.channels.create({
-      name: `🔖 詞彙累積-${username}`,
-      type: ChannelType.GuildText,
+      name:   `🔖 詞彙累積-${username}`,
+      type:   ChannelType.GuildText,
       parent: category.id,
       permissionOverwrites: overwrites,
     });
     const readingChan = await guild.channels.create({
-      name: `📖 閱讀筆記-${username}`,
-      type: ChannelType.GuildText,
+      name:   `📖 閱讀筆記-${username}`,
+      type:   ChannelType.GuildText,
       parent: category.id,
       permissionOverwrites: overwrites,
     });
 
-    // 9️⃣ 更新 Supabase
-    await supabase.from("user_channels").upsert(
+    // 5️⃣ 更新 Supabase
+    await supabase.from('user_channels').upsert(
       {
-        profile_id: profileId,
-        vocab_channel_id: vocabChan.id,
+        profile_id:         profileId,
+        vocab_channel_id:   vocabChan.id,
         reading_channel_id: readingChan.id,
       },
-      { onConflict: "profile_id" }
+      { onConflict: 'profile_id' }
     );
 
-    // 🔟 最後一次性 editReply
-    return interaction.editReply({
+    // 6️⃣ 最後一次性回覆
+    return interaction.reply({
       content:
         `✅ 已建立私人訓練頻道：\n` +
         `• 詞彙累積 → <#${vocabChan.id}>\n` +
         `• 閱讀筆記 → <#${readingChan.id}>`,
+      ephemeral: true
     });
+
   } catch (err) {
-    console.error("[handleStart 錯誤]", err);
-    return interaction.editReply({
+    console.error('[handleStart 錯誤]', err);
+    return interaction.reply({
       content: `❌ /start 失敗：${err.message}`,
+      ephemeral: true
     });
   }
 }
+
 
 /**
  * /review：複習詞彙 & 閱讀筆記
