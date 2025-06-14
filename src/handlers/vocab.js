@@ -111,6 +111,3 @@ export async function process(message) {
     '✅ 已記錄到你的詞彙累積'
   ].filter(Boolean).join('\n'));
 }
-
-
-export default handleVocab;

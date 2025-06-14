@@ -114,7 +114,7 @@ export async function handleStart(interaction, client) {
 /**
  * /review：複習詞彙 & 閱讀筆記
  */
-export async function handleReview(interaction) {
+export async function handleReview(interaction, client) {
 
   try {
     // 1️⃣ 取得 profileId

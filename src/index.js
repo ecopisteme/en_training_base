@@ -35,7 +35,7 @@ import { Client, IntentsBitField } from 'discord.js';
 import { createClient } from '@supabase/supabase-js';
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 import { handleStart, handleReview, handleAddNote } from './handlers/interaction.js';
-import  handleMessage from './handlers/message.js';
+import  { handleMessage } from './handlers/message.js';
 
 
 const client = new Client({

@@ -10,6 +10,7 @@ import {
 } from './interaction.js';
 
 /* ========= 指令名稱 ➜ Handler Map ========= */
+export async function handleMessage(message, client) {
 const handlers = new Map([
   ['start',   handleStart],
   ['review',  handleReview],
@@ -44,8 +45,8 @@ client.on('interactionCreate', async (interaction) => {
       await interaction.editReply('❌ 執行失敗，請稍後再試。');
     }
   }
-  module.exports = handleMessage;
 });
 
 /* ========= 其餘程式（登入、其他事件…）保持原樣 ========= */
 // ︙你原本的 client.login(...)、ready 事件等
+}
