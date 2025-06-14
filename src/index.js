@@ -1,3 +1,9 @@
+// ------ keep Render happy ------
+import http from 'http';
+const port = process.env.PORT || 3000;      // Render 會給 PORT
+http.createServer((_, res) => res.end('ok')).listen(port);
+// --------------------------------
+
 /* ---------- 既有第三方 import，保留你原本的 ---------- */
 import { Client, GatewayIntentBits, Events } from 'discord.js';
 import * as dotenv from 'dotenv';
