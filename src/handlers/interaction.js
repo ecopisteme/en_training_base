@@ -2,11 +2,6 @@
 import { ChannelType, PermissionFlagsBits } from 'discord.js';
 import { supabase } from '../lib/clients.js';
 
-// src/handlers/interaction.js
-
-import { ChannelType, PermissionFlagsBits } from "discord.js";
-import { supabase } from "../lib/clients.js";
-
 /**
  * /start：建立或取回私密頻道
  */
