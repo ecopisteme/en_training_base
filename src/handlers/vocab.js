@@ -112,3 +112,4 @@ export async function process(message) {
   ].filter(Boolean).join('\n'));
 }
 export { process as processVocab };
+export { process as handleVocab };
