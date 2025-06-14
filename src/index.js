@@ -1,108 +1,68 @@
-// src/index.js
-import dotenv from "dotenv";
+/* ---------- 既有第三方 import，保留你原本的 ---------- */
+import { Client, GatewayIntentBits, Events } from 'discord.js';
+import * as dotenv from 'dotenv';
 dotenv.config();
 
-// ———————— Health Check 服务器 ————————
-// 只有在部署环境 (Render 等) 有 PORT 时才启动；本地开发跳过，避免端口冲突
+/* ---------- 建立 Discord Client ---------- */
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
 
-// 1. 在文件顶部引入 http
-import http from 'http';
+/* ---------- 快取：userId ➜ { vocab, reading } ---------- */
+const channelMap = new Map();
 
-// 2. 只有在部署环境（有 PORT）时才启动 Health Check
-if (process.env.PORT) {
-  const port = Number(process.env.PORT);
+/* ---------- 匯入 Slash 指令 Handler ---------- */
+import {
+  handleStart,
+  handleAddNote,          // 如果 interaction.js 有這支指令
+} from './handlers/interaction.js';
 
-  const server = http.createServer((req, res) => {
-    res.writeHead(200);
-    res.end('OK');
-  });
+import { handleReview }  from './handlers/review.js';
+import { handleVocab }   from './handlers/vocab.js';
+import { handleReading } from './handlers/reading.js';
 
-  server.listen(port);
-  server.on('listening', () => {
-    console.log(`🩺 Health server listening on port ${port}`);
-  });
-  server.on('error', (err) => {
-    if (err.code === 'EADDRINUSE') {
-      console.warn(`⚠️  Port ${port} in use, skipping health server`);
-    } else {
-      throw err;
-    }
-  });
-}
+/* ---------- 匯入文字訊息 Handler ---------- */
+import { handleMessage } from './handlers/message.js';
 
-// Discord.js + handler imports
-import { Client, IntentsBitField } from 'discord.js';
-import { createClient } from '@supabase/supabase-js';
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
-import { handleStart, handleReview, handleAddNote } from './handlers/interaction.js';
-import  { handleMessage } from './handlers/message.js';
+/* ---------- 指令名稱 ➜ Handler Map ---------- */
+const handlers = new Map([
+  ['start',   handleStart],
+  ['addnote', handleAddNote],
+  ['review',  handleReview],
+]);
 
-
-const client = new Client({
-  intents: [
-    IntentsBitField.Flags.Guilds,
-    IntentsBitField.Flags.GuildMessages,
-    IntentsBitField.Flags.MessageContent,
-  ]
+/* ---------- Bot 上線時先載入舊的 channelMap ---------- */
+client.once(Events.ClientReady, async () => {
+  console.log(`🤖 ${client.user.tag} 已上線`);
+  // TODO: 若需要，從資料庫 preload userId ➜ vocab/reading channelId
 });
 
-const channelMap = new Map();   // <discord_id, { vocab: channelId, reading: channelId }>
-
-client.once('ready', async () => {
-  console.log(`已登入 ${client.user.tag}`);
-  // （可選）啟動時把所有已註冊的使用者載入 Map
-  const { data: list } = await supabase
-    .from('user_channels')
-    .select('profile_id, vocab_channel_id, reading_channel_id, profiles(discord_id)')
-    .order('profile_id');
-  for (const row of list) {
-    channelMap.set(
-      row.profiles.discord_id,
-      { vocab: row.vocab_channel_id, reading: row.reading_channel_id }
-    );
-  }
-});
-
-//messageCreate
-client.on('messageCreate', message => handleMessage(message, client, channelMap));
-
-
-//interactionCreate
-  // 只保留「一個」 InteractionCreate 監聽器
-client.on('interactionCreate', async (interaction) => {
-  // 只處理 Slash 指令
+/* ---------- 唯一的 interactionCreate 監聽器 ---------- */
+client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   try {
-    /* ❶ 3 秒內先 defer，一次就好 */
+    // ❶ 3 秒內私密 defer
     await interaction.deferReply({ ephemeral: true });
 
-    /* ❷ 根據指令名稱路由到對應 handler */
-    switch (interaction.commandName) {
-      case 'start':
-        await handleStart(interaction, client);
-        break;
-
-      case 'review':
-        await handleReview(interaction, client);
-        break;
-
-      case 'addnote':
-        await handleAddNote(interaction, client);
-        break;
-
-      default:
-        await interaction.editReply('⚠️ 未實作的指令');
+    // ❷ 依指令路由
+    const fn = handlers.get(interaction.commandName);
+    if (!fn) {
+      await interaction.editReply('⚠️ 指令未實作');
+      return;
     }
+
+    // ❸ 執行 handler（把 channelMap 傳進去）
+    await fn(interaction, client, channelMap);
 
   } catch (err) {
     console.error('[InteractionCreate 錯誤]', err);
-
-    // 已經 defer 過，安全地 editReply
     if (interaction.deferred || interaction.replied) {
       await interaction.editReply('❌ 執行失敗，請稍後再試。');
     }
   }
-});                  
+});
 
+/* ---------- 文字訊息監聽器 ---------- */
+client.on(Events.MessageCreate, msg => handleMessage(msg, client, channelMap));
+
+/* ---------- 登入 ---------- */
 client.login(process.env.DISCORD_TOKEN);
