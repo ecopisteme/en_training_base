@@ -46,7 +46,7 @@ export async function processReading(message) {
     }
   }
 }
-
+export { processReading as handleReading };
 
 
 
