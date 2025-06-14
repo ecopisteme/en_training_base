@@ -88,18 +88,41 @@ client.on('messageCreate', message => handleMessage(message, client, channelMap)
 
 
 //interactionCreate
+  // 只保留「一個」 InteractionCreate 監聽器
 client.on('interactionCreate', async (interaction) => {
-  if (!interaction.isCommand()) return;
-  if (interaction.commandName === 'start') {
-    return handleStart(interaction, client);
-  }
-  if (interaction.commandName === 'review') {
-    return handleReview(interaction);
-  }
-  if (interaction.commandName === 'addnote') {
-    return handleAddNote(interaction, client);
-  }
-});
+  // 只處理 Slash 指令
+  if (!interaction.isChatInputCommand()) return;
 
+  try {
+    /* ❶ 3 秒內先 defer，一次就好 */
+    await interaction.deferReply({ ephemeral: true });
+
+    /* ❷ 根據指令名稱路由到對應 handler */
+    switch (interaction.commandName) {
+      case 'start':
+        await handleStart(interaction, client);
+        break;
+
+      case 'review':
+        await handleReview(interaction, client);
+        break;
+
+      case 'addnote':
+        await handleAddNote(interaction, client);
+        break;
+
+      default:
+        await interaction.editReply('⚠️ 未實作的指令');
+    }
+
+  } catch (err) {
+    console.error('[InteractionCreate 錯誤]', err);
+
+    // 已經 defer 過，安全地 editReply
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply('❌ 執行失敗，請稍後再試。');
+    }
+  }
+});                  
 
 client.login(process.env.DISCORD_TOKEN);

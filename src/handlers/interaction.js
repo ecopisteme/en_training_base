@@ -115,7 +115,6 @@ export async function handleStart(interaction, client) {
  * /review：複習詞彙 & 閱讀筆記
  */
 export async function handleReview(interaction) {
-  await interaction.deferReply({ ephemeral: true });
 
   try {
     // 1️⃣ 取得 profileId
@@ -165,7 +164,6 @@ export async function handleReview(interaction) {
  * 處理 /addnote 指令
  */
 export async function handleAddNote(interaction, client) {
-  await interaction.deferReply({ ephemeral: true });
   try {
     const source = interaction.options.getString('source');
     const note   = interaction.options.getString('note');

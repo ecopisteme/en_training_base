@@ -1,6 +1,6 @@
 // src/prompts.js
 
-// 智能分类 Prompt
+// 智能分類 Prompt
 // src/prompts.js
 
 export const SMART_CLASSIFIER = `
