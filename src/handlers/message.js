@@ -44,6 +44,7 @@ client.on('interactionCreate', async (interaction) => {
       await interaction.editReply('❌ 執行失敗，請稍後再試。');
     }
   }
+  export default handleMessage;
 });
 
 /* ========= 其餘程式（登入、其他事件…）保持原樣 ========= */
