@@ -7,7 +7,7 @@ import {
   handleStart,
   handleReview,
   handleAddNote,
-} from '../interaction.js';
+} from './interaction.js';
 
 /* ========= 指令名稱 ➜ Handler Map ========= */
 const handlers = new Map([
