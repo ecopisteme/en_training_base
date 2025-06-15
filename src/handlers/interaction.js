@@ -6,6 +6,9 @@ import { ChannelType, PermissionFlagsBits } from 'discord.js';
 import { supabase } from '../lib/clients.js';
 
 /** /start：建立或取回私人訓練頻道 */
+import { ChannelType, PermissionFlagsBits } from 'discord.js';
+import { supabase } from '../lib/clients.js';
+
 export async function handleStart(interaction, client, channelMap) {
   const guild    = interaction.guild;
   const userId   = interaction.user.id;
@@ -13,7 +16,10 @@ export async function handleStart(interaction, client, channelMap) {
   const catName  = '私人訓練頻道';
 
   try {
-    /* 0️⃣ Upsert profiles → 取 id */
+    // 0️⃣ defer
+    await interaction.deferReply({ ephemeral: true });
+
+    // 1️⃣ Upsert profiles → 取 profileId
     const { data: prof, error: pErr } = await supabase
       .from('profiles')
       .upsert(
@@ -22,11 +28,10 @@ export async function handleStart(interaction, client, channelMap) {
       )
       .select('id')
       .single();
-
     if (pErr || !prof) throw new Error('無法存取或建立使用者資料');
     const profileId = prof.id;
 
-    /* 1️⃣ 檢查是否已有頻道 */
+    // 2️⃣ 檢查是否已建頻道
     const { data: uc } = await supabase
       .from('user_channels')
       .select('vocab_channel_id, reading_channel_id')
@@ -38,82 +43,77 @@ export async function handleStart(interaction, client, channelMap) {
         guild.channels.fetch(uc.vocab_channel_id).then(() => true).catch(() => false),
         guild.channels.fetch(uc.reading_channel_id).then(() => true).catch(() => false),
       ]);
-
       if (vOK && rOK) {
-        // ↳ 更新快取
         channelMap.set(userId, {
           vocab:   uc.vocab_channel_id,
           reading: uc.reading_channel_id,
         });
-
         return interaction.editReply(
-          `✅ 你已經有私人訓練頻道：
-` +
-          `- 詞彙累積 → <#${uc.vocab_channel_id}>
-` +
+          `✅ 你已經有私人訓練頻道：\n` +
+          `- 詞彙累積 → <#${uc.vocab_channel_id}>\n` +
           `- 閱讀筆記 → <#${uc.reading_channel_id}>`
         );
       }
     }
 
-    /* 2️⃣ 分類：若無則建立 */
+    // 3️⃣ 分類：若無則建立
     let category = guild.channels.cache.find(
-      (c) => c.type === ChannelType.GuildCategory && c.name === catName,
+      c => c.type === ChannelType.GuildCategory && c.name === catName
     );
-
     if (!category) {
       category = await guild.channels.create({
         name: catName,
-        type: ChannelType.GuildCategory,
+        type: ChannelType.GuildCategory
       });
     }
 
-    /* 3️⃣ 權限覆蓋 */
+    // 4️⃣ 權限覆寫
     const overwrites = [
       { id: guild.roles.everyone, deny:  [PermissionFlagsBits.ViewChannel] },
-      { id: userId,               allow: [PermissionFlagsBits.ViewChannel,
-                                          PermissionFlagsBits.SendMessages,
-                                          PermissionFlagsBits.ReadMessageHistory] },
-      { id: client.user.id,       allow: [PermissionFlagsBits.ViewChannel,
-                                          PermissionFlagsBits.SendMessages] },
+      { id: userId,               allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+      { id: client.user.id,       allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
     ];
 
-    /* 4️⃣ 建立兩個私密頻道 */
+    // 5️⃣ 建立兩個私密頻道
     const vocabChan = await guild.channels.create({
       name:   `🔖 詞彙累積-${username}`,
       type:   ChannelType.GuildText,
-      parent: category,
-      permissionOverwrites: overwrites,
+      parent: category.id,
+      permissionOverwrites: overwrites
     });
 
     const readingChan = await guild.channels.create({
       name:   `📖 閱讀筆記-${username}`,
       type:   ChannelType.GuildText,
-      parent: category,
-      permissionOverwrites: overwrites,
+      parent: category.id,
+      permissionOverwrites: overwrites
     });
 
-    /* 5️⃣ 寫回資料庫 */
-   await supabase
-  .from('user_channels')
-  .insert({
-    discord_id:           interaction.user.id, 
-    vocab_channel_id:     vocabChannel.id, 
-    reading_channel_id:   readingChannel.id,
-    guild_id:             interaction.guildId
-  });
+    // 6️⃣ 寫回資料庫
+    const { error: ucErr } = await supabase
+      .from('user_channels')
+      .insert({
+        profile_id:          profileId,
+        discord_id:          userId,
+        guild_id:            guild.id,
+        vocab_channel_id:    vocabChan.id,
+        reading_channel_id:  readingChan.id
+      });
+    if (ucErr) throw ucErr;
 
-    /* 6️⃣ 更新快取 → 文字訊息即時生效 */
-    channelMap.set(userId, { vocab: vocabChan.id, reading: readingChan.id });
+    // 7️⃣ 更新快取
+    channelMap.set(userId, {
+      vocab:   vocabChan.id,
+      reading: readingChan.id
+    });
 
-    /* 7️⃣ 回覆成功 */
+    // 8️⃣ 回覆使用者
     return interaction.editReply(
-      `✅ 已建立私人訓練頻道：
-` +
-      `- 詞彙累積 → <#${vocabChan.id}>
-` +
+      `✅ 已建立私人訓練頻道：\n` +
+      `- 詞彙累積 → <#${vocabChan.id}>\n` +
       `- 閱讀筆記 → <#${readingChan.id}>`
     );
+
   } catch (err) {
     console.error('[handleStart 錯誤]', err);
     return interaction.editReply(`❌ /start 失敗：${err.message}`);
