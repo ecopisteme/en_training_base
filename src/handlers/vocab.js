@@ -77,7 +77,7 @@ if (!text.includes(' ')) {
 const { word, source_type, source_title, source_url, user_note } = meta;
 
   // ─── 2️⃣ 解析 JSON，parse 失敗就 fallback single_word ───────────────
-  let meta;
+  
   try {
     meta = JSON.parse(aiContent);
     if (!meta.word) throw new Error('Missing word');
