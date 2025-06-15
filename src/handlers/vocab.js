@@ -19,9 +19,7 @@ export async function processVocab(message) {
     return message.reply('❌ 請先執行 /start 註冊');
   }
   const profileId = profileRes.data.id;
-  const text = message.content.trim();
 
-  // ─── 1️⃣ GPT 提取 JSON（只包 call OpenAI） ─────────────────────────
   const text = message.content.trim();
 
 // 1️⃣ 如果用户只贴一个单词，就跳过调用 OpenAI
