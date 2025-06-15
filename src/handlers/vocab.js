@@ -85,25 +85,29 @@ if (!text.includes(' ')) {
 // ── 2️⃣ 解構出最終要用的值 ───────────────────────────────────────────────
 const { word, source_type, source_title, source_url, user_note } = meta;
 
-// ── 3️⃣ 用 GPT 產生連結式解釋（單字模式時，不帶任何 Context） ─────────────────────
+
+// ─── 3️⃣ 用 GPT 產生連結式解釋 ──────────────────────────────────────
 let explanation = '';
 try {
-  // 如果是 single_word，就不要任何 context
-  const contextLine = source_type === 'single_word'
-    ? ''
-    : `${source_type}${source_title ? ' — ' + source_title : ''}`;
+  let messages;
+  if (source_type === 'single_word') {
+    // 单字模式，只给 Word，不给 Context
+    messages = [
+      { role: 'system', content: prompts.VOCAB },
+      { role: 'user',   content: `Word: ${word}` }
+    ];
+  } else {
+    // 其它模式，正常给 Word+Context
+    const contextLine = source_type + (source_title ? ` — ${source_title}` : '');
+    messages = [
+      { role: 'system', content: prompts.VOCAB },
+      { role: 'user',   content: `Word: ${word}\nContext: ${contextLine}` }
+    ];
+  }
 
   const defi = await openai.chat.completions.create({
     model: 'gpt-4.1-mini',
-    messages: [
-      { role: 'system', content: prompts.VOCAB },
-      {
-        role: 'user',
-        content:
-          `Word: ${word}\n` +
-          `Context: ${contextLine}`
-      }
-    ],
+    messages,
     temperature: 1
   });
   explanation = defi.choices[0].message.content.trim();
@@ -112,7 +116,8 @@ try {
   explanation = '(無法取得解釋)';
 }
 
-// —— 以下保留你原本的寫入 Supabase & 回覆 Discord 邏輯 ——
+// ── 以下保留你原本的：寫回 Supabase、回覆 Discord 等所有後續邏輯 ──
+
 
 
   // ─── 4️⃣ 寫入 Supabase ────────────────────────────────────────────
