@@ -22,29 +22,29 @@ export async function processVocab(message) {
 
     // 取得使用者輸入並去頭尾空格
   
-    const text = message.content.trim();
+    // ── ① 取使用者文字並拆出 meta ─────────────────────────────────────
+  const text = message.content.trim();
 
-// ── 1️⃣ 拆出 meta：若只輸入單字，直接當 meta；否則呼叫 OpenAI 拆 JSON ────────────────
-let meta;
-if (!text.includes(' ')) {
-  // 使用者只輸入一個單字 → single_word 模式
-  meta = {
-    word:        text,
-    source_type: 'single_word',
-    source_title:'',
-    source_url:  '',
-    user_note:   ''
-  };
-} else {
-  // 使用者輸入句子 → 呼叫 OpenAI 拆 JSON
-  let aiContent = '';
-  try {
-    const resp = await openai.chat.completions.create({
-      model: 'gpt-4.1-mini',
-      messages: [
-        {
-          role: 'system',
-          content: `
+  let meta;
+  if (!text.includes(' ')) {
+    // 使用者只輸入一個單字 → single_word 模式
+    meta = {
+      word:        text,
+      source_type: 'single_word',
+      source_title:'',
+      source_url:  '',
+      user_note:   ''
+    };
+  } else {
+    // 使用者輸入句子 → 呼叫 OpenAI 拆 JSON
+    let aiContent = '';
+    try {
+      const resp = await openai.chat.completions.create({
+        model: 'gpt-4.1-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `
 你是「詞彙來源擷取器」。輸入一段訊息後，請輸出純 JSON，結構：
 {
   "word":"<單字>",
@@ -53,37 +53,37 @@ if (!text.includes(' ')) {
   "source_url":"<URL 或空字串>",
   "user_note":"<使用者心得或空字串>"
 }
-只回 JSON，不要任何多餘文字。`
-        },
-        { role: 'user', content: text }
-      ],
-      temperature: 1
-    });
-    aiContent = resp.choices[0].message.content;
-  } catch (err) {
-    console.error('[Vocab OpenAI Err]', err);
-    return await message.reply('❌ 無法擷取詞彙來源，請稍後再試');
+只回 JSON，不要額外文字。`
+          },
+          { role: 'user', content: text }
+        ],
+        temperature: 1
+      });
+      aiContent = resp.choices[0].message.content;
+    } catch (err) {
+      console.error('[Vocab OpenAI Err]', err);
+      return await message.reply('❌ 無法擷取詞彙來源，請稍後再試');
+    }
+
+    // 解析 JSON，若失敗或缺 word，fallback single_word
+    try {
+      const parsed = JSON.parse(aiContent);
+      if (!parsed.word) throw new Error('Missing word');
+      meta = parsed;
+    } catch (err) {
+      console.warn('[Vocab parse failed → fallback]', aiContent, err);
+      meta = {
+        word:        text,
+        source_type: 'single_word',
+        source_title:'',
+        source_url:  '',
+        user_note:   ''
+      };
+    }
   }
 
-  // 解析 JSON，並確保有 word 欄位；若解析失敗，fallback 回 single_word
-  try {
-    const parsed = JSON.parse(aiContent);
-    if (!parsed.word) throw new Error('Missing word');
-    meta = parsed;
-  } catch (err) {
-    console.warn('[Vocab parse failed → fallback]', aiContent, err);
-    meta = {
-      word:        text,
-      source_type: 'single_word',
-      source_title:'',
-      source_url:  '',
-      user_note:   ''
-    };
-  }
-}
-
-// ── 2️⃣ 解構出最終要用的值 ───────────────────────────────────────────────
-const { word, source_type, source_title, source_url, user_note } = meta;
+  // ── ② 解構出最終要用的值 ────────────────────────────────────────────────
+  const { word, source_type, source_title, source_url, user_note } = meta;
 
 
 // ─── 3️⃣ 用 GPT 產生連結式解釋 ──────────────────────────────────────
