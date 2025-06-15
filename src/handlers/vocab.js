@@ -23,7 +23,7 @@ export async function processVocab(message) {
     // 取得使用者輸入並去頭尾空格
   
     // ── ① 取使用者文字並拆出 meta ─────────────────────────────────────
-  const text = message.content.trim();
+  
 
     // ① 取使用者文字，先去除所有 @mention，再去頭尾空格
   const raw = message.content.trim();
