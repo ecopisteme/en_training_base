@@ -25,7 +25,7 @@ export async function processVocab(message) {
   let aiContent;
   try {
     const resp = await openai.chat.completions.create({
-      model: 'gpt-4.1-nano',
+      model: 'gpt-4.1-mini',
       messages: [
         {
           role: 'system',
