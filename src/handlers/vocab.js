@@ -87,19 +87,15 @@ const { word, source_type, source_title, source_url, user_note } = meta;
 // ── ③ 用 GPT 產生連結式解釋 ───────────────────────────────────────────
 let explanation = '';
 try {
-  // single_word 就只傳 Word，不帶 Context
-  const messages = source_type === 'single_word'
-    ? [
-        { role: 'system', content: prompts.VOCAB },
-        { role: 'user',   content: `Word: ${word}` }
-      ]
-    : [
-        { role: 'system', content: prompts.VOCAB },
-        {
-          role: 'user',
-          content: `Word: ${word}\nContext: ${source_type}${source_title ? ' — ' + source_title : ''}`
-        }
-      ];
+  // 無論 single_word 或其它，都要傳兩行：Word + Context
+  const contextLine = source_type === 'single_word'
+    ? 'single_word'
+    : source_type + (source_title ? ` — ${source_title}` : '');
+
+  const messages = [
+    { role: 'system', content: prompts.VOCAB },
+    { role: 'user',   content: `Word: ${word}\nContext: ${contextLine}` }
+  ];
 
   const defi = await openai.chat.completions.create({
     model: 'gpt-4.1-mini',
