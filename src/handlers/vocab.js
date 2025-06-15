@@ -23,18 +23,18 @@ export async function processVocab(message) {
     // 取得使用者輸入並去頭尾空格
   
       // 讀取使用者輸入
-  const text = message.content.trim();
+    const text = message.content.trim();
 
   // 1️⃣ 拆出 meta：若只輸入單字，直接當 meta；否則呼叫 OpenAI 拆 JSON
   let meta;
   if (!text.includes(' ')) {
-    // 使用者只輸入一個單字
+    // 使用者只輸入一個單字 → single_word 模式
     meta = {
-      word: text,
+      word:        text,
       source_type: 'single_word',
-      source_title: '',
-      source_url: '',
-      user_note: ''
+      source_title:'',
+      source_url:  '',
+      user_note:   ''
     };
   } else {
     // 使用者輸入句子 → 呼叫 OpenAI 拆 JSON
@@ -66,7 +66,7 @@ export async function processVocab(message) {
       return await message.reply('❌ 無法擷取詞彙來源，請稍後再試');
     }
 
-    // 解析 JSON，並確保有 word 欄位；若解析失敗，回 fallback
+    // 解析 JSON，並確保有 word 欄位；若解析失敗，fallback 回 single_word
     try {
       const parsed = JSON.parse(aiContent);
       if (!parsed.word) throw new Error('Missing word');
@@ -74,20 +74,17 @@ export async function processVocab(message) {
     } catch (err) {
       console.warn('[Vocab parse failed → fallback]', aiContent, err);
       meta = {
-        word: text,
+        word:        text,
         source_type: 'single_word',
-        source_title: '',
-        source_url: '',
-        user_note: ''
+        source_title:'',
+        source_url:  '',
+        user_note:   ''
       };
     }
   }
 
   // 2️⃣ 解構出最終要用的值
   const { word, source_type, source_title, source_url, user_note } = meta;
-
-  // ── 以下請保留你原本的「用 GPT 產生連結式解釋」、寫資料庫、回覆訊息等所有後續邏輯 ──
-
 
   // ─── 3️⃣ 用 GPT 產生連結式解釋 ──────────────────────────────────────
   let explanation = '';
@@ -98,7 +95,7 @@ export async function processVocab(message) {
         { role: 'system', content: prompts.VOCAB },
         {
           role: 'user',
-          content: `Word: ${word}\nContext: ${source_type}${source_title? ' — '+source_title: ''}`
+          content: `Word: ${word}\nContext: ${source_type}${source_title? ' — '+source_title : ''}`
         }
       ],
       temperature: 1
@@ -108,6 +105,8 @@ export async function processVocab(message) {
     console.error('[Vocab Explanation Err]', e);
     explanation = '(無法取得解釋)';
   }
+
+  // …（後面寫入資料庫、回覆 Discord 等邏輯請保持不變）…
 
   // ─── 4️⃣ 寫入 Supabase ────────────────────────────────────────────
   const { error: dbErr } = await supabase.from('vocabulary').insert([{
