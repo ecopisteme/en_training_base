@@ -5,8 +5,11 @@ dotenv.config();
 import { supabase, openai } from '../lib/clients.js';
 import prompts from '../prompts.js';
 
+/**
+ * 處理「詞彙累積」專屬頻道訊息
+ */
 export async function processVocab(message) {
-  // 0️⃣ 取 profile
+  // 取 profileId
   const profileRes = await supabase
     .from('profiles')
     .select('id')
@@ -17,22 +20,25 @@ export async function processVocab(message) {
   }
   const profileId = profileRes.data.id;
 
-  // ① 拆 meta：去掉 mention、trim，單字直接走 single_word，句子才呼叫 OpenAI 拆 JSON
-  const raw = message.content.trim();
+  // ① 取 user 輸入、去除所有 mention、trim
+  const raw = message.content;
   const text = raw.replace(/<@!?\d+>/g, '').trim();
 
+  // **DEBUG**：確認 text
+  console.log('[DEBUG] raw message:', JSON.stringify(raw));
+  console.log('[DEBUG] parsed text :', JSON.stringify(text));
+
+  // ② 拆 meta：只有一個單字就 single_word，否則走 JSON 提取
   let meta;
   if (!text.includes(' ')) {
-    // 使用者只輸入一個單字
     meta = {
       word:        text,
       source_type: 'single_word',
-      source_title: '',
-      source_url:   '',
-      user_note:    ''
+      source_title:'',
+      source_url:  '',
+      user_note:   ''
     };
   } else {
-    // 使用者輸入句子 → 呼叫 OpenAI 拆 JSON
     let aiContent = '';
     try {
       const resp = await openai.chat.completions.create({
@@ -49,7 +55,7 @@ export async function processVocab(message) {
   "source_url":"<URL 或空字串>",
   "user_note":"<使用者心得或空字串>"
 }
-只回 JSON，不要其他文字。`
+只回 JSON，不要額外文字。`
           },
           { role: 'user', content: text }
         ],
@@ -58,10 +64,9 @@ export async function processVocab(message) {
       aiContent = resp.choices[0].message.content;
     } catch (err) {
       console.error('[Vocab OpenAI Err]', err);
-      return await message.reply('❌ 無法擷取詞彙來源，請稍後再試');
+      return message.reply('❌ 無法擷取詞彙來源，請稍後再試');
     }
 
-    // 只在這裡 parse JSON 並 fallback，之後不再重 parse
     try {
       const parsed = JSON.parse(aiContent);
       if (!parsed.word) throw new Error('Missing word');
@@ -71,29 +76,35 @@ export async function processVocab(message) {
       meta = {
         word:        text,
         source_type: 'single_word',
-        source_title: '',
-        source_url:   '',
-        user_note:    ''
+        source_title:'',
+        source_url:  '',
+        user_note:   ''
       };
     }
   }
 
-  // ② 解構出要用的欄位
-  const { word, source_type, source_title, source_url, user_note } = meta;
+  // **DEBUG**：確認 meta
+  console.log('[DEBUG] final meta  :', meta);
 
-  // ─── 3️⃣ 用 GPT 產生連結式解釋 ──────────────────────────────────────
-   
+  const { word, source_type, source_title, source_url, user_note } = meta;
+  console.log('[DEBUG] using word   :', word, 'source_type:', source_type);
+
+  // ③ 用 GPT 產生解釋
   let explanation = '';
   try {
-    // 不要 special‐case，永遠給它 Word + Context 兩行
-    const contextLine = source_type === 'single_word'
-      ? 'single_word'
-      : source_type + (source_title ? ` — ${source_title}` : '');
-
-    const messages = [
-      { role: 'system', content: prompts.VOCAB },
-      { role: 'user',   content: `Word: ${word}\nContext: ${contextLine}` }
-    ];
+    let messages;
+    if (source_type === 'single_word') {
+      messages = [
+        { role: 'system', content: prompts.VOCAB },
+        { role: 'user',   content: `Word: ${word}` }
+      ];
+    } else {
+      const contextLine = source_type + (source_title ? ` — ${source_title}` : '');
+      messages = [
+        { role: 'system', content: prompts.VOCAB },
+        { role: 'user',   content: `Word: ${word}\nContext: ${contextLine}` }
+      ];
+    }
 
     const defi = await openai.chat.completions.create({
       model: 'gpt-4.1-mini',
@@ -106,37 +117,38 @@ export async function processVocab(message) {
     explanation = '(無法取得解釋)';
   }
 
-  // ─── 4️⃣ 寫入 Supabase ────────────────────────────────────────────
+  // ④ 寫入 Supabase
   const { error: dbErr } = await supabase.from('vocabulary').insert([{
-    user_id:      profileId,
+    user_id:       profileId,
     word,
-    source:       source_title || null,
-    page:         null,
-    response:     explanation,
+    source:        source_title || null,
+    page:          null,
+    response:      explanation,
     source_type,
-    source_title: source_title || null,
-    source_url:   source_url   || null,
-    user_note:    user_note    || null
+    source_title:  source_title || null,
+    source_url:    source_url   || null,
+    user_note:     user_note    || null
   }]);
   if (dbErr) {
     console.error('[Vocab DB Err]', dbErr);
     return message.reply('❌ 儲存單字失敗，請稍後再試');
   }
 
-  // ─── 5️⃣ 回覆 Discord ────────────────────────────────────────────
+  // ⑤ 回覆 Discord
   return message.reply(
     [
       `**🔖 ${word}**`,
       explanation,
       '',
       `> 來源：${source_type}${source_title? ' — '+source_title: ''}`,
-      source_url ? `> 連結：${source_url}` : '',
-      user_note  ? `> 筆記：${user_note}` : '',
+      source_url  ? `> 連結：${source_url}`   : '',
+      user_note   ? `> 筆記：${user_note}`     : '',
       '',
       '✅ 已記錄到你的詞彙累積'
-    ].filter(Boolean).join('\n')
+    ]
+    .filter(Boolean)
+    .join('\n')
   );
 }
 
-// 最後別忘了匯出 handler
 export { processVocab as handleVocab };
