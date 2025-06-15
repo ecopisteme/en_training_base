@@ -6,8 +6,6 @@ import { ChannelType, PermissionFlagsBits } from 'discord.js';
 import { supabase } from '../lib/clients.js';
 
 /** /start：建立或取回私人訓練頻道 */
-import { ChannelType, PermissionFlagsBits } from 'discord.js';
-import { supabase } from '../lib/clients.js';
 
 export async function handleStart(interaction, client, channelMap) {
   const guild    = interaction.guild;
