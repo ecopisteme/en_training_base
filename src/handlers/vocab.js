@@ -22,7 +22,21 @@ export async function processVocab(message) {
   const text = message.content.trim();
 
   // ─── 1️⃣ GPT 提取 JSON（只包 call OpenAI） ─────────────────────────
-  let aiContent;
+  const text = message.content.trim();
+
+// 1️⃣ 如果用户只贴一个单词，就跳过调用 OpenAI
+let meta;
+if (!text.includes(' ')) {
+  meta = {
+    word: text,
+    source_type: 'single_word',
+    source_title: '',
+    source_url: '',
+    user_note: ''
+  };
+} else {
+  // 1a️⃣ 否则调用 OpenAI 拆 JSON
+  let aiContent = '';
   try {
     const resp = await openai.chat.completions.create({
       model: 'gpt-4.1-mini',
@@ -38,7 +52,6 @@ export async function processVocab(message) {
   "source_url":"<URL 或空字串>",
   "user_note":"<使用者心得或空字串>"
 }
-若使用者只輸入一個單字，請輸出 source_type: "single_word"，其餘欄位空字串。
 只回 JSON，不要任何多餘文字。`
         },
         { role: 'user', content: text }
@@ -48,8 +61,22 @@ export async function processVocab(message) {
     aiContent = resp.choices[0].message.content;
   } catch (err) {
     console.error('[Vocab OpenAI Err]', err);
-    return message.reply('❌ 無法擷取詞彙來源，請稍後再試');
+    return await message.reply('❌ 無法擷取詞彙來源，請稍後再試');
   }
+
+  // 1b️⃣ 解析 JSON，并确保有 word 字段
+  try {
+    const parsed = JSON.parse(aiContent);
+    if (!parsed.word) throw new Error('Missing word');
+    meta = parsed;
+  } catch (err) {
+    console.error('[Vocab parse failed → fallback]', aiContent, err);
+    return await message.reply('❌ 無法擷取詞彙來源，請稍後再試');
+  }
+}
+
+// 1c️⃣ 解构出最终使用的字段
+const { word, source_type, source_title, source_url, user_note } = meta;
 
   // ─── 2️⃣ 解析 JSON，parse 失敗就 fallback single_word ───────────────
   let meta;
