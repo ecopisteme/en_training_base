@@ -96,13 +96,13 @@ let explanation = '';
 try {
   let messages;
   if (source_type === 'single_word') {
-    // 单字模式，只给 Word，不给 Context
+    // 單字模式，只給 Word，不給 Context
     messages = [
       { role: 'system', content: prompts.VOCAB },
       { role: 'user',   content: `Word: ${word}` }
     ];
   } else {
-    // 其它模式，正常给 Word+Context
+    // 其它模式，正常給 Word + Context
     const contextLine = source_type + (source_title ? ` — ${source_title}` : '');
     messages = [
       { role: 'system', content: prompts.VOCAB },
@@ -120,8 +120,6 @@ try {
   console.error('[Vocab Explanation Err]', e);
   explanation = '(無法取得解釋)';
 }
-
-// ── 以下保留你原本的：寫回 Supabase、回覆 Discord 等所有後續邏輯 ──
 
 
 
