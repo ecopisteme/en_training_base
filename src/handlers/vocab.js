@@ -20,36 +20,31 @@ export async function processVocab(message) {
   }
   const profileId = profileRes.data.id;
 
-    // 取得使用者輸入並去頭尾空格
   
-    // ── ① 取使用者文字並拆出 meta ─────────────────────────────────────
-  
+  // ── ① 取使用者文字並拆出 meta ─────────────────────────────────────────
+const raw = message.content;
+const text = raw.replace(/<@!?\d+>/g, '').trim();
 
-    // ① 取使用者文字，先去除所有 @mention，再去頭尾空格
-  const raw = message.content.trim();
-    // 把 <@123456789> 或 <@!123456789> 這種 mention 全刪掉
-  const text = raw.replace(/<@!?\d+>/g, '').trim();
-
-  let meta;
-  if (!text.includes(' ')) {
-    // 使用者只輸入一個單字 → single_word 模式
-    meta = {
-      word:        text,
-      source_type: 'single_word',
-      source_title:'',
-      source_url:  '',
-      user_note:   ''
-    };
-  } else {
-    // 使用者輸入句子 → 呼叫 OpenAI 拆 JSON
-    let aiContent = '';
-    try {
-      const resp = await openai.chat.completions.create({
-        model: 'gpt-4.1-mini',
-        messages: [
-          {
-            role: 'system',
-            content: `
+let meta;
+if (!text.includes(' ')) {
+  // 使用者只輸入一個單字 → single_word 模式
+  meta = {
+    word:        text,
+    source_type: 'single_word',    // 一定要是 single_word
+    source_title:'',
+    source_url:  '',
+    user_note:   ''
+  };
+} else {
+  // 使用者輸入句子 → 呼叫 OpenAI 拆 JSON
+  let aiContent = '';
+  try {
+    const resp = await openai.chat.completions.create({
+      model: 'gpt-4.1-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `
 你是「詞彙來源擷取器」。輸入一段訊息後，請輸出純 JSON，結構：
 {
   "word":"<單字>",
@@ -59,56 +54,52 @@ export async function processVocab(message) {
   "user_note":"<使用者心得或空字串>"
 }
 只回 JSON，不要額外文字。`
-          },
-          { role: 'user', content: text }
-        ],
-        temperature: 1
-      });
-      aiContent = resp.choices[0].message.content;
-    } catch (err) {
-      console.error('[Vocab OpenAI Err]', err);
-      return await message.reply('❌ 無法擷取詞彙來源，請稍後再試');
-    }
-
-    // 解析 JSON，若失敗或缺 word，fallback single_word
-    try {
-      const parsed = JSON.parse(aiContent);
-      if (!parsed.word) throw new Error('Missing word');
-      meta = parsed;
-    } catch (err) {
-      console.warn('[Vocab parse failed → fallback]', aiContent, err);
-      meta = {
-        word:        text,
-        source_type: 'single_word',
-        source_title:'',
-        source_url:  '',
-        user_note:   ''
-      };
-    }
+        },
+        { role: 'user', content: text }
+      ],
+      temperature: 1
+    });
+    aiContent = resp.choices[0].message.content;
+  } catch (err) {
+    console.error('[Vocab OpenAI Err]', err);
+    return await message.reply('❌ 無法擷取詞彙來源，請稍後再試');
   }
 
-  // ── ② 解構出最終要用的值 ────────────────────────────────────────────────
-  const { word, source_type, source_title, source_url, user_note } = meta;
+  try {
+    const parsed = JSON.parse(aiContent);
+    if (!parsed.word) throw new Error('Missing word');
+    meta = parsed;
+  } catch (err) {
+    console.warn('[Vocab parse failed → fallback]', aiContent, err);
+    meta = {
+      word:        text,
+      source_type: 'single_word',
+      source_title:'',
+      source_url:  '',
+      user_note:   ''
+    };
+  }
+}
 
+// ── ② 解構出最終要用的值 ────────────────────────────────────────────────
+const { word, source_type, source_title, source_url, user_note } = meta;
 
-// ─── 3️⃣ 用 GPT 產生連結式解釋 ──────────────────────────────────────
+// ── ③ 用 GPT 產生連結式解釋 ───────────────────────────────────────────
 let explanation = '';
 try {
-  let messages;
-  if (source_type === 'single_word') {
-    // 單字模式，只給 Word，不給 Context
-    messages = [
-      { role: 'system', content: prompts.VOCAB },
-      { role: 'user',   content: `Word: ${word}` }
-    ];
-  } else {
-    // 其它模式，正常給 Word + Context
-    const contextLine = source_type + (source_title ? ` — ${source_title}` : '');
-    messages = [
-      { role: 'system', content: prompts.VOCAB },
-      { role: 'user',   content: `Word: ${word}\nContext: ${contextLine}` }
-    ];
-  }
+  // single_word 就只傳 Word，不帶 Context
+  const messages = source_type === 'single_word'
+    ? [
+        { role: 'system', content: prompts.VOCAB },
+        { role: 'user',   content: `Word: ${word}` }
+      ]
+    : [
+        { role: 'system', content: prompts.VOCAB },
+        {
+          role: 'user',
+          content: `Word: ${word}\nContext: ${source_type}${source_title ? ' — ' + source_title : ''}`
+        }
+      ];
 
   const defi = await openai.chat.completions.create({
     model: 'gpt-4.1-mini',
@@ -121,40 +112,25 @@ try {
   explanation = '(無法取得解釋)';
 }
 
-
-
-  // ─── 4️⃣ 寫入 Supabase ────────────────────────────────────────────
-  const { error: dbErr } = await supabase.from('vocabulary').insert([{
-    user_id:       profileId,
-    word,
-    source:        source_title || null,
-    page:          null,
-    response:      explanation,
-    source_type,
-    source_title:  source_title || null,
-    source_url:    source_url   || null,
-    user_note:     user_note    || null
-  }]);
-  if (dbErr) {
-    console.error('[Vocab DB Err]', dbErr);
-    return message.reply('❌ 儲存單字失敗，請稍後再試');
-  }
-
-  // ─── 5️⃣ 回覆 Discord ────────────────────────────────────────────
-  return message.reply(
-    [
-      `**🔖 ${word}**`,
-      explanation,
-      '',
-      `> 來源：${source_type}${source_title? ' — '+source_title: ''}`,
-      source_url  ? `> 連結：${source_url}`   : '',
-      user_note   ? `> 筆記：${user_note}`     : '',
-      '',
-      '✅ 已記錄到你的詞彙累積'
-    ]
-    .filter(Boolean)
-    .join('\n')
-  );
+// ── ④ 寫入 Supabase、⑤ 回覆訊息 …（以下不動）─────────────────────────
+const { error: dbErr } = await supabase
+  .from('vocabulary')
+  .insert([{ user_id: profileId, word, source: source_title || null, page: null, response: explanation,
+             source_type, source_title: source_title || null, source_url: source_url || null, user_note }]);
+if (dbErr) {
+  console.error('[Vocab DB Err]', dbErr);
+  return message.reply('❌ 儲存單字失敗，請稍後再試');
+}
+return message.reply([
+  `**🔖 ${word}**`,
+  explanation,
+  '',
+  `> 來源：${source_type}${source_title ? ' — '+source_title : ''}`,
+  source_url ? `> 連結：${source_url}` : '',
+  user_note ? `> 筆記：${user_note}` : '',
+  '',
+  '✅ 已記錄到你的詞彙累積'
+].filter(Boolean).join('\n'));
 }
 
 // 最後別忘了把 processVocab 當 handler 匯出
