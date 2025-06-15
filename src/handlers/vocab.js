@@ -9,7 +9,7 @@ import prompts from '../prompts.js';
  * 處理「詞彙累積」專屬頻道訊息
  */
 export async function processVocab(message) {
-  // 取 profileId
+  // （前面 profile 部分保留不動）
   const profileRes = await supabase
     .from('profiles')
     .select('id')
@@ -20,17 +20,22 @@ export async function processVocab(message) {
   }
   const profileId = profileRes.data.id;
 
-  // ① 取 user 輸入、去除所有 mention、trim
-  const raw = message.content;
-  const text = raw.replace(/<@!?\d+>/g, '').trim();
+  // ── ① 取使用者文字並拆出 meta ─────────────────────────────────────
+  // 先去頭尾空格
+  const raw = message.content.trim();
+  // 只刪掉最前面的 @機器人 mention（如果有的話）
+  const text = raw.replace(
+    new RegExp(`^<@!?${message.client.user.id}>`), ''
+  ).trim();
 
-  // **DEBUG**：確認 text
-  console.log('[DEBUG] raw message:', JSON.stringify(raw));
-  console.log('[DEBUG] parsed text :', JSON.stringify(text));
+  console.log('[DEBUG] cleaned text:', JSON.stringify(text));
+  if (!text) {
+    return message.reply('❌ 你好像沒打字哦！只要在這裡貼一個單字就好。');
+  }
 
-  // ② 拆 meta：只有一個單字就 single_word，否則走 JSON 提取
   let meta;
   if (!text.includes(' ')) {
+    // 使用者只輸入一個單字 → single_word
     meta = {
       word:        text,
       source_type: 'single_word',
@@ -39,6 +44,7 @@ export async function processVocab(message) {
       user_note:   ''
     };
   } else {
+    // 使用者輸入句子 → 呼叫 OpenAI 拆 JSON
     let aiContent = '';
     try {
       const resp = await openai.chat.completions.create({
@@ -83,11 +89,8 @@ export async function processVocab(message) {
     }
   }
 
-  // **DEBUG**：確認 meta
-  console.log('[DEBUG] final meta  :', meta);
-
+  // ── ② 解構出最終要用的值 ────────────────────────────────────────────────
   const { word, source_type, source_title, source_url, user_note } = meta;
-  console.log('[DEBUG] using word   :', word, 'source_type:', source_type);
 
   // ③ 用 GPT 產生解釋
   let explanation = '';
