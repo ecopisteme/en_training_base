@@ -31,7 +31,7 @@ export async function processVocab(message) {
     // 使用者只輸入一個單字 → single_word 模式
     meta = {
       word:        text,
-      source_type: 'single_word',
+      source_type: '',
       source_title:'',
       source_url:  '',
       user_note:   ''
@@ -75,7 +75,7 @@ export async function processVocab(message) {
       console.warn('[Vocab parse failed → fallback]', aiContent, err);
       meta = {
         word:        text,
-        source_type: 'single_word',
+        source_type: '',
         source_title:'',
         source_url:  '',
         user_note:   ''
