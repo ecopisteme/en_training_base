@@ -21,9 +21,11 @@ export async function processVocab(message) {
   const profileId = profileRes.data.id;
 
     // 取得使用者輸入並去頭尾空格
+  
+      // 讀取使用者輸入
   const text = message.content.trim();
 
-  // 1️⃣ 拆出 meta：若只輸入單字，直接當 meta；否則才呼叫 OpenAI 拆 JSON
+  // 1️⃣ 拆出 meta：若只輸入單字，直接當 meta；否則呼叫 OpenAI 拆 JSON
   let meta;
   if (!text.includes(' ')) {
     // 使用者只輸入一個單字
@@ -35,7 +37,7 @@ export async function processVocab(message) {
       user_note: ''
     };
   } else {
-    // 使用者輸入句子→呼叫 OpenAI 拆 JSON
+    // 使用者輸入句子 → 呼叫 OpenAI 拆 JSON
     let aiContent = '';
     try {
       const resp = await openai.chat.completions.create({
@@ -64,35 +66,27 @@ export async function processVocab(message) {
       return await message.reply('❌ 無法擷取詞彙來源，請稍後再試');
     }
 
-    // 解析 JSON，並確保有 word 字段
+    // 解析 JSON，並確保有 word 欄位；若解析失敗，回 fallback
     try {
       const parsed = JSON.parse(aiContent);
       if (!parsed.word) throw new Error('Missing word');
       meta = parsed;
     } catch (err) {
-      console.error('[Vocab parse failed → fallback]', aiContent, err);
-      return await message.reply('❌ 無法擷取詞彙來源，請稍後再試');
+      console.warn('[Vocab parse failed → fallback]', aiContent, err);
+      meta = {
+        word: text,
+        source_type: 'single_word',
+        source_title: '',
+        source_url: '',
+        user_note: ''
+      };
     }
   }
 
-  // 2️ 解構出最終要用的值
+  // 2️⃣ 解構出最終要用的值
   const { word, source_type, source_title, source_url, user_note } = meta;
 
-  // ─── 2️⃣ 解析 JSON，parse 失敗就 fallback single_word ───────────────
-  
-  try {
-    meta = JSON.parse(aiContent);
-    if (!meta.word) throw new Error('Missing word');
-  } catch (err) {
-    console.warn('[Vocab parse failed → fallback]', err);
-    meta = {
-      word:        text,
-      source_type: 'single_word',
-      source_title:'',
-      source_url:  '',
-      user_note:   ''
-    };
-  }
+  // ── 以下請保留你原本的「用 GPT 產生連結式解釋」、寫資料庫、回覆訊息等所有後續邏輯 ──
 
 
   // ─── 3️⃣ 用 GPT 產生連結式解釋 ──────────────────────────────────────
