@@ -9,6 +9,8 @@ import { Client, GatewayIntentBits, Events } from 'discord.js';
 import * as dotenv from 'dotenv';
 dotenv.config();
 
+import { supabase } from './lib/clients.js';
+
 /* ---------- 建立 Discord Client ---------- */
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
 
@@ -38,7 +40,28 @@ const handlers = new Map([
 /* ---------- Bot 上線時先載入舊的 channelMap ---------- */
 client.once(Events.ClientReady, async () => {
   console.log(`🤖 ${client.user.tag} 已上線`);
-  // TODO: 若需要，從資料庫 preload userId ➜ vocab/reading channelId
+
+  try {
+    // ① 從 user_channels 撈所有 profile ➜ 頻道對映
+    const { data, error } = await supabase
+      .from('user_channels')
+      .select('profiles(discord_id), vocab_channel_id, reading_channel_id');
+
+    if (error) throw error;
+
+    // ② 將結果塞回 channelMap
+    for (const row of data) {
+      const userId = row.profiles.discord_id;
+      channelMap.set(userId, {
+        vocab:   row.vocab_channel_id,
+        reading: row.reading_channel_id
+      });
+    }
+    console.log(`[preload] 已載入 ${channelMap.size} 位用戶的私人頻道對映`);
+
+  } catch (e) {
+    console.error('[preload channelMap 失敗]', e);
+  }
 });
 
 /* ---------- 唯一的 interactionCreate 監聽器 ---------- */
