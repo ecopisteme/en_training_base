@@ -82,22 +82,18 @@ export async function processVocab(message) {
   const { word, source_type, source_title, source_url, user_note } = meta;
 
   // ─── 3️⃣ 用 GPT 產生連結式解釋 ──────────────────────────────────────
+   
   let explanation = '';
   try {
-    // 根據 source_type 給不同 messages
-    let messages;
-    if (source_type === 'single_word') {
-      messages = [
-        { role: 'system', content: prompts.VOCAB },
-        { role: 'user',   content: `Word: ${word}` }
-      ];
-    } else {
-      const contextLine = source_type + (source_title ? ` — ${source_title}` : '');
-      messages = [
-        { role: 'system', content: prompts.VOCAB },
-        { role: 'user',   content: `Word: ${word}\nContext: ${contextLine}` }
-      ];
-    }
+    // 不要 special‐case，永遠給它 Word + Context 兩行
+    const contextLine = source_type === 'single_word'
+      ? 'single_word'
+      : source_type + (source_title ? ` — ${source_title}` : '');
+
+    const messages = [
+      { role: 'system', content: prompts.VOCAB },
+      { role: 'user',   content: `Word: ${word}\nContext: ${contextLine}` }
+    ];
 
     const defi = await openai.chat.completions.create({
       model: 'gpt-4.1-mini',
