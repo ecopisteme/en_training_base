@@ -43,7 +43,7 @@ export async function processVocab(message) {
         },
         { role: 'user', content: text }
       ],
-      temperature: 3
+      temperature: 1
     });
     aiContent = resp.choices[0].message.content;
   } catch (err) {
@@ -81,7 +81,7 @@ export async function processVocab(message) {
           content: `Word: ${word}\nContext: ${source_type}${source_title? ' — '+source_title: ''}`
         }
       ],
-      temperature: 3
+      temperature: 1
     });
     explanation = defi.choices[0].message.content.trim();
   } catch (e) {
