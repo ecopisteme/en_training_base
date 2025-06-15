@@ -13,7 +13,7 @@ dotenv.config();
 import { supabase } from './lib/clients.js';
 
 /* ---------- 建立 Discord Client ---------- */
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 
 /* ---------- 快取：userId ➜ { vocab, reading } ---------- */
 const channelMap = new Map();
