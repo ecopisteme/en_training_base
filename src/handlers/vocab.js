@@ -92,7 +92,6 @@ const { word, source_type, source_title, source_url, user_note } = meta;
     };
   }
 
-  const { word, source_type, source_title, source_url, user_note } = meta;
 
   // ─── 3️⃣ 用 GPT 產生連結式解釋 ──────────────────────────────────────
   let explanation = '';
