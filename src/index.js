@@ -41,23 +41,19 @@ const handlers = new Map([
 /* ---------- Bot 上線時先載入舊的 channelMap ---------- */
 client.once(Events.ClientReady, async () => {
   console.log(`🤖 ${client.user.tag} 已上線`);
-
   try {
-    // ① 從 user_channels 撈所有 profile ➜ 頻道對映
     const { data, error } = await supabase
       .from('user_channels')
-      .select('discord_id, vocab_channel, reading_channel');
+      .select('discord_id, vocab_channel_id, reading_channel_id');
 
     if (error) throw error;
 
-    // ② 將結果塞回 channelMap
-    data.forEach(row => {
+    for (const row of data) {
       channelMap.set(row.discord_id, {
-        vocab:   row.vocab_channel,
-        reading: row.reading_channel
+        vocab:   row.vocab_channel_id,
+        reading: row.reading_channel_id
       });
-    });
-
+    }
     console.log(`[preload] 已載入 ${channelMap.size} 位用戶的私人頻道對映`);
   } catch (e) {
     console.error('[preload channelMap 失敗]', e);

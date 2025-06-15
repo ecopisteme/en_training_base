@@ -94,14 +94,14 @@ export async function handleStart(interaction, client, channelMap) {
     });
 
     /* 5️⃣ 寫回資料庫 */
-    await supabase.from('user_channels').upsert(
-      {
-        profile_id:         profileId,
-        vocab_channel_id:   vocabChan.id,
-        reading_channel_id: readingChan.id,
-      },
-      { onConflict: 'profile_id' },
-    );
+   await supabase
+  .from('user_channels')
+  .insert({
+    discord_id:           interaction.user.id, 
+    vocab_channel_id:     vocabChannel.id, 
+    reading_channel_id:   readingChannel.id,
+    guild_id:             interaction.guildId
+  });
 
     /* 6️⃣ 更新快取 → 文字訊息即時生效 */
     channelMap.set(userId, { vocab: vocabChan.id, reading: readingChan.id });
