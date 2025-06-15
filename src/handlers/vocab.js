@@ -27,7 +27,7 @@ export async function process(message) {
   let meta = {};
   try {
     const extractResp = await openai.chat.completions.create({
-      model: 'GPT-4.1 nano',
+      model: 'gpt-4.1-mini',
       messages: [
         {
           role: 'system',
@@ -35,7 +35,8 @@ export async function process(message) {
 你是「詞彙來源擷取器」。輸入一段訊息後，請輸出純 JSON，結構：
 {
   "word":    "<要查的單字>",
-  "source_type":"<link|book|article|video|podcast|sentence>",
+  "source_type":"<link|book|article|video|podcast|sentence|single_word
+>",
   "source_title":"<書名或文章標題或影片名稱或原句…>",
   "source_url":"<如有連結就填，否則空字串>",
   "user_note":"<使用者自己補充的心得，可空>"
@@ -70,7 +71,7 @@ export async function process(message) {
   let explanation = '';
   try {
     const defi = await openai.chat.completions.create({
-      model: 'GPT-4.1 mini',
+      model: 'gpt-4.1-mini',
       messages: [
         { role: 'system', content: prompts.VOCAB },
         { role: 'user',   content: `Word: ${word}\nContext: ${source_type} ${source_title}` }
