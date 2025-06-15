@@ -80,8 +80,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
         .from('user_channels')
         .upsert({
           discord_id:      interaction.user.id,
-          vocab_channel:   vocabChannel,
-          reading_channel: readingChannel,
+          vocab_channel_id:   vocabChannel,
+          reading_channel_id: readingChannel,
         });
 
       // 更新快取
